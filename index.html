@@ -47,7 +47,7 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            transition: opacity 4.0s ease-in-out;
+            transition: opacity 0.5s ease-in-out;
         }
         #loading-overlay.hidden {
             opacity: 0;
@@ -1237,15 +1237,20 @@
                         doc.line(margin, currentY, pageW - margin, currentY);
                         currentY += 2;
 
-                        const cgstAmount = totalAmountItems * 0.09;
-                        const sgstAmount = totalAmountItems * 0.09;
-                        const totalGST = cgstAmount + sgstAmount;
+                        // Retrieve GST percentages from input fields
+                        const cgstPercent = parseFloat(cgstPercentInput ? cgstPercentInput.value : '0') || 0;
+                        const sgstPercent = parseFloat(sgstPercentInput ? sgstPercentInput.value : '0') || 0;
+                        const igstPercent = parseFloat(igstPercentInput ? igstPercentInput.value : '0') || 0;
+
+                        const cgstAmount = totalAmountItems * (cgstPercent / 100);
+                        const sgstAmount = totalAmountItems * (sgstPercent / 100);
+                        const totalGST = cgstAmount + sgstAmount; // For challan, usually only CGST/SGST if intra-state
 
                         doc.setFontSize(8);
-                        doc.text(`CGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`CGST (${cgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${cgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
                         currentY += 5;
-                        doc.text(`SGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`SGST (${sgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${sgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
                         currentY += 5;
 
@@ -1272,7 +1277,7 @@
                         doc.text('Terms and Conditions', margin + innerMargin, tempY);
                         tempY += 4;
                         const termsAndConditions = [
-                            "1. Subject to Ahmedabad Jurisdiction.",
+                            "1. Subject to Tamil Nadu Jurisdiction.", // Changed Jurisdiction
                             "2. Our responsibility ceases as soon as the goods leave our premises.",
                             "3. Goods once sold will not be taken back.",
                             "4. Delivery ex-premises."
@@ -1872,20 +1877,24 @@
                         doc.line(margin, currentY, pageW - margin, currentY);
                         currentY += 2;
 
-                        const cgstAmount = parseFloat(taxableValueInput.value) * (parseFloat(cgstPercentInput.value) / 100);
-                        const sgstAmount = parseFloat(taxableValueInput.value) * (parseFloat(sgstPercentInput.value) / 100);
-                        const igstAmount = parseFloat(taxableValueInput.value) * (parseFloat(igstPercentInput.value) / 100);
+                        const cgstPercent = parseFloat(cgstPercentInput.value) || 0;
+                        const sgstPercent = parseFloat(sgstPercentInput.value) || 0;
+                        const igstPercent = parseFloat(igstPercentInput.value) || 0;
+
+                        const cgstAmount = parseFloat(taxableValueInput.value) * (cgstPercent / 100);
+                        const sgstAmount = parseFloat(taxableValueInput.value) * (sgstPercent / 100);
+                        const igstAmount = parseFloat(taxableValueInput.value) * (igstPercent / 100);
                         const totalGST = cgstAmount + sgstAmount + igstAmount;
 
                         doc.setFontSize(8);
-                        doc.text(`CGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`CGST (${cgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${cgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
                         currentY += 5;
-                        doc.text(`SGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`SGST (${sgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${sgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
                         currentY += 5;
                         if (igstAmount > 0) {
-                            doc.text(`IGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                            doc.text(`IGST (${igstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                             doc.text(`${igstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
                             currentY += 5;
                         }
@@ -1913,7 +1922,7 @@
                         doc.text('Terms and Conditions', margin + innerMargin, tempY);
                         tempY += 4;
                         const termsAndConditions = [
-                            "1. Subject to Ahmedabad Jurisdiction.",
+                            "1. Subject to Tamil Nadu Jurisdiction.", // Changed Jurisdiction
                             "2. Our responsibility ceases as soon as the goods leave our premises.",
                             "3. Goods once sold will not be taken back.",
                             "4. Delivery ex-premises."
