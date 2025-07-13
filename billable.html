@@ -1,0 +1,2677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturing Management App</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Basic print styles for Challan/Invoice */
+        @media print {
+            body > *:not(.print-area) {
+                display: none !important;
+            }
+            .print-area {
+                display: block !important;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            /* Ensure PDF content is visible and fills the page */
+            .jspdf-container {
+                width: 100% !important;
+                height: auto !important;
+                overflow: visible !important;
+            }
+            .jspdf-container canvas {
+                width: 100% !important;
+                height: auto !important;
+            }
+        }
+        /* Loading overlay styles */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #f3f4f6; /* bg-gray-100 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 4.0s ease-in-out;
+        }
+        #loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none; /* Allows clicks through once hidden */
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-100 antialiased">
+
+    <!-- Loading Overlay with Logo -->
+    <div id="loading-overlay" class="flex flex-col items-center justify-center min-h-screen">
+        <img src="billable logo.png" alt="Billable Logo" class="w-48 h-auto mb-4 rounded-lg shadow-md">
+        <div class="text-xl text-gray-600">Loading application...</div>
+    </div>
+
+    <!-- Header and Navigation -->
+    <nav id="main-nav" class="bg-blue-800 p-4 shadow-lg hidden">
+        <div class="container mx-auto flex flex-wrap justify-between items-center">
+            <div id="company-name-display" class="text-white text-2xl font-bold rounded-md px-3 py-1">
+                Sri Lakshmi Industries
+            </div>
+            <div class="flex space-x-4">
+                <button id="nav-home" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Home
+                </button>
+                <button id="nav-inventory" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Inventory
+                </button>
+                <button id="nav-delivery-challan" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Delivery Challan
+                </button>
+                <button id="nav-invoice" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Invoice
+                </button>
+                <button id="nav-inward" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Inward
+                </button>
+                <button id="nav-outward" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Outward
+                </button>
+                <button id="nav-customers" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Customers
+                </button>
+                <button id="nav-settings" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-blue-100 hover:bg-blue-700">
+                    Settings
+                </button>
+                <button id="logout-button" class="px-4 py-2 rounded-md font-medium transition-colors duration-200 text-red-100 hover:bg-red-700">
+                    Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main id="app-content" class="container mx-auto p-6 mt-4 hidden">
+        <!-- Content will be rendered here by JavaScript -->
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white text-center p-4 mt-8 rounded-t-lg shadow-inner">
+        <p>&copy; <span id="current-year"></span> <span id="footer-company-name">Sri Lakshmi Industries</span>. All rights reserved.</p>
+        <p class="text-sm">Powered by HTML, JavaScript, Local Storage & Gemini AI</p>
+    </footer>
+
+    <script type="module">
+        // Global application state
+        const appState = {
+            // userId is simplified for local storage as there's no external auth
+            userId: 'local_user_id', // A fixed ID for local data
+            isLoggedIn: false,
+            currentPage: 'home',
+            companyDetails: {
+                name: 'Sri Lakshmi Industries',
+                gstin: '',
+                address: '',
+                phone: '',
+                email: ''
+            },
+            isJsPdfLoaded: false,
+            isAuthReady: false, // Will be set to true after initial load attempt
+            // Data collections, now directly in appState
+            products: [],
+            customers: [],
+            deliveryChallans: [],
+            invoices: [],
+            inwardEntries: [],
+            outwardEntries: []
+        };
+
+        // --- Local Storage Functions ---
+
+        // Key for storing data in localStorage
+        const LOCAL_STORAGE_KEY = 'manufacturingApp_data';
+
+        /**
+         * Saves the current application state to localStorage.
+         * Only saves the data collections and company details.
+         */
+        function saveDataToLocalStorage() {
+            try {
+                const dataToSave = {
+                    companyDetails: appState.companyDetails,
+                    products: appState.products,
+                    customers: appState.customers,
+                    deliveryChallans: appState.deliveryChallans,
+                    invoices: appState.invoices,
+                    inwardEntries: appState.inwardEntries,
+                    outwardEntries: appState.outwardEntries
+                };
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(dataToSave));
+                console.log("App state saved to local storage.");
+            } catch (error) {
+                console.error("Error saving to local storage:", error);
+                showMessage('app-content', 'Error saving data locally. Your browser storage might be full or blocked.', false);
+            }
+        }
+
+        /**
+         * Loads application state from localStorage.
+         * Initializes appState with loaded data or default values if no data is found.
+         */
+        function loadDataFromLocalStorage() {
+            try {
+                const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (storedData) {
+                    const parsedData = JSON.parse(storedData);
+                    // Merge loaded data into appState, ensuring defaults for missing fields
+                    appState.companyDetails = parsedData.companyDetails || appState.companyDetails;
+                    appState.products = parsedData.products || [];
+                    appState.customers = parsedData.customers || [];
+                    appState.deliveryChallans = parsedData.deliveryChallans || [];
+                    appState.invoices = parsedData.invoices || [];
+                    appState.inwardEntries = parsedData.inwardEntries || [];
+                    appState.outwardEntries = parsedData.outwardEntries || [];
+                    console.log("App state loaded from local storage.");
+                } else {
+                    console.log("No previous app state found in local storage. Using default state.");
+                }
+            } catch (error) {
+                console.error("Error loading from local storage:", error);
+                showMessage('app-content', 'Error loading data from local storage. Data might be corrupted.', false);
+            }
+        }
+
+
+        // --- Helper Functions ---
+
+        // Function to convert number to words (Indian Rupees)
+        const numberToWordsIndian = (num) => {
+            const a = ['', 'one ', 'two ', 'three ', 'four ', 'five ', 'six ', 'seven ', 'eight ', 'nine ', 'ten ', 'eleven ', 'twelve ', 'thirteen ', 'fourteen ', 'fifteen ', 'sixteen ', 'seventeen ', 'eighteen ', 'nineteen '];
+            const b = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+            const at = ['', 'thousand ', 'lakh ', 'crore '];
+
+            function convertLessThanHundred(n) {
+                let res = '';
+                if (n < 20) {
+                    res = a[n];
+                } else {
+                    res = b[Math.floor(n / 10)] + ' ' + a[n % 10];
+                }
+                return res;
+            }
+
+            function inWords(n) {
+                let s = String(n);
+                let str = '';
+                let end = s.length;
+                let i = 0;
+
+                while (end > 0) {
+                    let chunk;
+                    if (i === 0) {
+                        chunk = parseInt(s.substring(Math.max(0, end - 2), end), 10);
+                        end -= 2;
+                    } else {
+                        chunk = parseInt(s.substring(Math.max(0, end - 2), end), 10);
+                        end -= 2;
+                    }
+
+                    if (chunk > 0) {
+                        str = (convertLessThanHundred(chunk) + at[i] + str).trim();
+                    }
+                    i++;
+                    if (i >= at.length) {
+                        at.push('');
+                    }
+                }
+                return str.replace(/\s+/g, ' ').trim();
+            }
+
+            if (isNaN(num) || num === null || num === undefined) {
+                console.error("numberToWordsIndian received invalid number:", num);
+                return 'Invalid Number';
+            }
+
+            if (num === 0) return 'Zero Rupees Only.';
+
+            const numStr = num.toFixed(2);
+            let [integerPart, decimalPart] = numStr.split('.');
+            let result = '';
+
+            if (parseInt(integerPart, 10) > 0) {
+                result += inWords(parseInt(integerPart, 10)) + ' Rupees';
+            }
+
+            if (parseInt(decimalPart, 10) > 0) {
+                if (result) result += ' and ';
+                result += inWords(parseInt(decimalPart, 10)) + ' Paise';
+            }
+
+            return result.trim().charAt(0).toUpperCase() + result.trim().slice(1) + ' Only.';
+        };
+
+
+        // Function to update the UI based on appState changes
+        function updateUI() {
+            const appContent = document.getElementById('app-content');
+            const mainNav = document.getElementById('main-nav');
+            const companyNameDisplay = document.getElementById('company-name-display');
+            const footerCompanyName = document.getElementById('footer-company-name');
+            const currentYear = document.getElementById('current-year');
+            const loadingOverlay = document.getElementById('loading-overlay');
+
+            if (currentYear) currentYear.textContent = new Date().getFullYear();
+
+            // Hide loading overlay once auth state is ready
+            if (appState.isAuthReady && loadingOverlay) {
+                loadingOverlay.classList.add('hidden');
+                // Ensure main content is visible after loading
+                if (appContent) appContent.classList.remove('hidden');
+            }
+
+            if (!appState.isAuthReady) {
+                // Keep loading overlay visible and return
+                return;
+            }
+
+            if (!appState.isLoggedIn) {
+                renderLogin();
+                if (mainNav) mainNav.classList.add('hidden');
+                if (appContent) appContent.classList.remove('hidden'); // Ensure app-content is visible for login form
+                return;
+            }
+
+            if (mainNav) mainNav.classList.remove('hidden');
+            if (companyNameDisplay) { // Safety check
+                companyNameDisplay.textContent = appState.companyDetails.name;
+            }
+            if (footerCompanyName) { // Safety check
+                footerCompanyName.textContent = appState.companyDetails.name;
+            }
+
+
+            // Update active navigation button
+            document.querySelectorAll('#main-nav button').forEach(button => {
+                button.classList.remove('bg-blue-600', 'text-white', 'shadow-md');
+                button.classList.add('text-blue-100', 'hover:bg-blue-700');
+            });
+            const activeButton = document.getElementById(`nav-${appState.currentPage}`);
+            if (activeButton) {
+                activeButton.classList.add('bg-blue-600', 'text-white', 'shadow-md');
+                activeButton.classList.remove('text-blue-100', 'hover:bg-blue-700');
+            }
+
+            // Render current page content
+            switch (appState.currentPage) {
+                case 'home':
+                    renderHome();
+                    break;
+                case 'inventory':
+                    renderInventory();
+                    break;
+                case 'delivery-challan':
+                    renderDeliveryChallan();
+                    break;
+                case 'invoice':
+                    renderInvoice();
+                    break;
+                case 'inward':
+                    renderInward();
+                    break;
+                case 'outward':
+                    renderOutward();
+                    break;
+                case 'customers':
+                    renderCustomers();
+                    break;
+                case 'settings':
+                    renderSettings();
+                    break;
+                default:
+                    renderHome();
+            }
+        }
+
+        function showMessage(elementId, message, isSuccess = true) {
+            const msgDiv = document.getElementById(elementId);
+            if (msgDiv) {
+                msgDiv.innerHTML = message;
+                msgDiv.className = `px-4 py-3 rounded-md mb-4 text-center ${isSuccess ? 'bg-green-100 text-green-700 border border-green-400' : 'bg-red-100 text-red-700 border border-red-400'}`;
+                msgDiv.classList.remove('hidden');
+                setTimeout(() => {
+                    msgDiv.classList.add('hidden');
+                    msgDiv.innerHTML = '';
+                }, 5000);
+            }
+        }
+
+        // --- Page Rendering Functions ---
+
+        function renderLogin() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="flex items-center justify-center min-h-screen bg-gray-100">
+                    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+                        <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Login to ${appState.companyDetails.name}</h2>
+                        <div id="login-message" class="hidden"></div>
+                        <form id="login-form">
+                            <div class="mb-4">
+                                <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+                                <input type="text" id="username" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="sliadmin" required>
+                            </div>
+                            <div class="mb-6">
+                                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                                <input type="password" id="password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="********" required>
+                            </div>
+                            <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200">
+                                Login
+                            </button>
+                            <button type="button" id="forgot-password-button" class="mt-4 w-full text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors duration-200">
+                                Forgot Password/Username?
+                            </button>
+                        </form>
+                        <form id="reset-form" class="hidden">
+                            <h3 class="text-xl font-semibold text-gray-700 mb-4">Reset Password/Username</h3>
+                            <div class="mb-4">
+                                <label for="resetCode" class="block text-sm font-medium text-gray-700">Reset Code</label>
+                                <input type="text" id="resetCode" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Enter reset code" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="newPassword" class="block text-sm font-medium text-gray-700">New Password (optional)</label>
+                                <input type="password" id="newPassword" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Enter new password">
+                            </div>
+                            <div class="mb-4">
+                                <label for="confirmNewPassword" class="block text-sm font-medium text-gray-700">Confirm New Password</label>
+                                <input type="password" id="confirmNewPassword" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Confirm new password">
+                            </div>
+                            <div class="mb-6">
+                                <label for="newUsername" class="block text-sm font-medium text-gray-700">New Username (optional)</label>
+                                <input type="text" id="newUsername" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Enter new username">
+                            </div>
+                            <button type="submit" class="w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors duration-200">
+                                Reset
+                            </button>
+                            <button type="button" id="back-to-login-button" class="mt-4 w-full text-gray-600 hover:text-gray-800 text-sm font-medium transition-colors duration-200">
+                                Back to Login
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            const loginForm = document.getElementById('login-form');
+            const forgotPasswordButton = document.getElementById('forgot-password-button');
+            const backToLoginButton = document.getElementById('back-to-login-button');
+            const resetForm = document.getElementById('reset-form');
+
+            if (loginForm) {
+                loginForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const username = document.getElementById('username').value;
+                    const password = document.getElementById('password').value;
+                    const DEFAULT_USERNAME = 'sliadmin';
+                    const DEFAULT_PASSWORD = 'sli-sylesh2011';
+
+                    if (username === DEFAULT_USERNAME && password === DEFAULT_PASSWORD) {
+                        appState.isLoggedIn = true;
+                        showMessage('login-message', 'Login successful!', true);
+                        updateUI();
+                    } else {
+                        showMessage('login-message', 'Invalid username or password.', false);
+                    }
+                });
+            }
+
+            if (forgotPasswordButton) {
+                forgotPasswordButton.addEventListener('click', () => {
+                    if (loginForm) loginForm.classList.add('hidden');
+                    if (resetForm) resetForm.classList.remove('hidden');
+                    const loginMessage = document.getElementById('login-message');
+                    if (loginMessage) loginMessage.classList.add('hidden'); // Hide login message
+                });
+            }
+
+            if (backToLoginButton) {
+                backToLoginButton.addEventListener('click', () => {
+                    if (resetForm) resetForm.classList.add('hidden');
+                    if (loginForm) loginForm.classList.remove('hidden');
+                    const loginMessage = document.getElementById('login-message');
+                    if (loginMessage) loginMessage.classList.add('hidden'); // Hide reset message
+                });
+            }
+
+            if (resetForm) {
+                resetForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const resetCode = document.getElementById('resetCode').value;
+                    const newPassword = document.getElementById('newPassword').value;
+                    const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+                    const newUsername = document.getElementById('newUsername').value;
+                    const RESET_CODE = 'jkdfhsli90924988';
+
+                    if (resetCode === RESET_CODE) {
+                        if (newPassword && newPassword === confirmNewPassword) {
+                            showMessage('login-message', 'Password reset simulated successfully!', true);
+                            if (resetForm) resetForm.classList.add('hidden');
+                            if (loginForm) loginForm.classList.remove('hidden');
+                        } else if (newUsername) {
+                            showMessage('login-message', 'Username reset simulated successfully!', true);
+                            if (resetForm) resetForm.classList.add('hidden');
+                            if (loginForm) loginForm.classList.remove('hidden');
+                        } else {
+                            showMessage('login-message', 'Please enter a new password (and confirm) or a new username.', false);
+                        }
+                    } else {
+                        showMessage('login-message', 'Invalid reset code.', false);
+                    }
+                });
+            }
+        }
+
+        function renderHome() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-4">Welcome to ${appState.companyDetails.name}!</h2>
+                    <p class="text-gray-600 mb-4">
+                        This application helps you manage your turned components manufacturing business efficiently.
+                        Navigate through the sections to manage inventory, delivery challans, invoices, and track inward/outward movements.
+                    </p>
+                    <p class="text-gray-600">
+                        Your current User ID: <span class="font-semibold text-blue-600">${appState.userId || 'Loading...'}</span>
+                    </p>
+                </div>
+            `;
+        }
+
+        async function renderInventory() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">Inventory Management</h2>
+                    <div id="inventory-message" class="hidden"></div>
+
+                    <!-- Add/Edit Product Form -->
+                    <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 id="product-form-title" class="text-2xl font-semibold text-gray-700 mb-4">Add New Product</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="product-name" class="block text-sm font-medium text-gray-700">Product Name</label>
+                                <input type="text" id="product-name" name="name" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., M8 Hex Bolt">
+                            </div>
+                            <div>
+                                <label for="product-quantity" class="block text-sm font-medium text-gray-700">Quantity</label>
+                                <input type="number" id="product-quantity" name="quantity" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 1000">
+                            </div>
+                            <div>
+                                <label for="product-unit-price" class="block text-sm font-medium text-gray-700">Unit Price (₹)</label>
+                                <input type="number" id="product-unit-price" name="unitPrice" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 0.50">
+                            </div>
+                            <div>
+                                <label for="product-hsn-sac" class="block text-sm font-medium text-gray-700">HSN/SAC Code</label>
+                                <input type="text" id="product-hsn-sac" name="hsnSac" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 84799090">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="product-description" class="block text-sm font-medium text-gray-700">Description</label>
+                                <textarea id="product-description" name="description" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., High-strength steel bolt for automotive applications."></textarea>
+                                <button id="generate-ai-description" class="mt-2 px-4 py-2 bg-purple-600 text-white font-semibold rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors duration-200">
+                                    Generate AI Description
+                                </button>
+                                <p id="ai-suggestion" class="mt-2 text-sm text-gray-600 hidden"></p>
+                            </div>
+                        </div>
+                        <button id="add-update-product-button" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200">
+                            Add Product
+                        </button>
+                        <button id="cancel-edit-product-button" class="ml-4 px-6 py-3 bg-gray-300 text-gray-800 font-bold rounded-md shadow-lg hover:bg-gray-400 transition-colors duration-200 hidden">
+                            Cancel Edit
+                        </button>
+                    </div>
+
+                    <!-- Product List -->
+                    <h3 class="text-2xl font-semibold text-gray-700 mb-4">Current Inventory</h3>
+                    <div id="product-list-container" class="overflow-x-auto">
+                        <p class="text-gray-500">Loading products...</p>
+                    </div>
+                </div>
+            `;
+
+            let editingProduct = null; // Local state for editing
+
+            const productNameInput = document.getElementById('product-name');
+            const productDescriptionInput = document.getElementById('product-description');
+            const productQuantityInput = document.getElementById('product-quantity');
+            const productUnitPriceInput = document.getElementById('product-unit-price');
+            const productHsnSacInput = document.getElementById('product-hsn-sac');
+            const addUpdateProductButton = document.getElementById('add-update-product-button');
+            const cancelEditProductButton = document.getElementById('cancel-edit-product-button');
+            const productFormTitle = document.getElementById('product-form-title');
+            const aiSuggestion = document.getElementById('ai-suggestion');
+            const generateAiDescriptionButton = document.getElementById('generate-ai-description');
+
+            const clearForm = () => {
+                if (productNameInput) productNameInput.value = '';
+                if (productDescriptionInput) productDescriptionInput.value = '';
+                if (productQuantityInput) productQuantityInput.value = '';
+                if (productUnitPriceInput) productUnitPriceInput.value = '';
+                if (productHsnSacInput) productHsnSacInput.value = '';
+                editingProduct = null;
+                if (addUpdateProductButton) addUpdateProductButton.textContent = 'Add Product';
+                if (productFormTitle) productFormTitle.textContent = 'Add New Product';
+                if (cancelEditProductButton) cancelEditProductButton.classList.add('hidden');
+                if (aiSuggestion) {
+                    aiSuggestion.classList.add('hidden');
+                    aiSuggestion.textContent = '';
+                }
+            };
+
+            const renderProductList = (products) => {
+                const productListContainer = document.getElementById('product-list-container');
+                if (!productListContainer) { // Safety check
+                    console.warn("product-list-container not found. Skipping renderProductList.");
+                    return;
+                }
+                if (products.length === 0) {
+                    productListContainer.innerHTML = '<p class="text-gray-500">No products in inventory. Add some above!</p>';
+                    return;
+                }
+
+                let tableHtml = `
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-gray-100 border-b">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Description</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Quantity</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Unit Price</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">HSN/SAC</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                products.forEach(product => {
+                    tableHtml += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-800">${product.name}</td>
+                            <td class="py-3 px-4 text-gray-600 text-sm">${product.description || 'N/A'}</td>
+                            <td class="py-3 px-4 text-gray-800">${product.quantity}</td>
+                            <td class="py-3 px-4 text-gray-800">₹${parseFloat(product.unitPrice).toFixed(2)}</td>
+                            <td class="py-3 px-4 text-gray-800">${product.hsnSac || 'N/A'}</td>
+                            <td class="py-3 px-4">
+                                <button data-id="${product.id}" class="edit-product-button mr-2 px-3 py-1 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors duration-200">
+                                    Edit
+                                </button>
+                                <button data-id="${product.id}" class="delete-product-button px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `</tbody></table>`;
+                productListContainer.innerHTML = tableHtml;
+
+                document.querySelectorAll('.edit-product-button').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const id = e.target.dataset.id;
+                        const productToEdit = appState.products.find(p => p.id === id); // Use appState.products
+                        if (productToEdit) {
+                            editingProduct = productToEdit;
+                            if (productNameInput) productNameInput.value = productToEdit.name;
+                            if (productDescriptionInput) productDescriptionInput.value = productToEdit.description;
+                            if (productQuantityInput) productQuantityInput.value = productToEdit.quantity;
+                            if (productUnitPriceInput) productUnitPriceInput.value = productToEdit.unitPrice;
+                            if (productHsnSacInput) productHsnSacInput.value = productToEdit.hsnSac;
+                            if (addUpdateProductButton) addUpdateProductButton.textContent = 'Update Product';
+                            if (productFormTitle) productFormTitle.textContent = 'Edit Product';
+                            if (cancelEditProductButton) cancelEditProductButton.classList.remove('hidden');
+                            if (aiSuggestion) aiSuggestion.classList.add('hidden'); // Hide AI suggestion when editing
+                        }
+                    });
+                });
+
+                document.querySelectorAll('.delete-product-button').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const id = e.target.dataset.id;
+                        appState.products = appState.products.filter(p => p.id !== id); // Update appState.products
+                        saveDataToLocalStorage(); // Save changes
+                        renderProductList(appState.products); // Re-render list
+                        showMessage('inventory-message', 'Product deleted successfully!', true);
+                    });
+                });
+            };
+
+            // Initial render of products from appState
+            renderProductList(appState.products);
+
+
+            if (addUpdateProductButton) {
+                addUpdateProductButton.addEventListener('click', async () => {
+                    const newProduct = {
+                        name: productNameInput ? productNameInput.value : '',
+                        description: productDescriptionInput ? productDescriptionInput.value : '',
+                        quantity: productQuantityInput ? parseInt(productQuantityInput.value, 10) : 0, // Ensure quantity is number
+                        unitPrice: productUnitPriceInput ? parseFloat(productUnitPriceInput.value) : 0, // Ensure unitPrice is number
+                        hsnSac: productHsnSacInput ? productHsnSacInput.value : '',
+                    };
+
+                    if (!newProduct.name || isNaN(newProduct.quantity) || newProduct.quantity < 0 || isNaN(newProduct.unitPrice) || newProduct.unitPrice < 0 || !newProduct.hsnSac) {
+                        showMessage('inventory-message', "Please fill in all required fields (Name, Quantity, Unit Price, HSN/SAC) with valid numbers.", false);
+                        return;
+                    }
+
+                    if (editingProduct) {
+                        // Update existing product
+                        appState.products = appState.products.map(p =>
+                            p.id === editingProduct.id ? { ...newProduct, id: p.id } : p
+                        );
+                        showMessage('inventory-message', 'Product updated successfully!', true);
+                    } else {
+                        // Add new product
+                        appState.products.push({ ...newProduct, id: crypto.randomUUID() }); // Assign a unique ID
+                        showMessage('inventory-message', 'Product added successfully!', true);
+                    }
+                    saveDataToLocalStorage(); // Save changes
+                    clearForm();
+                    renderProductList(appState.products); // Re-render list
+                });
+            }
+
+            if (cancelEditProductButton) cancelEditProductButton.addEventListener('click', clearForm);
+
+            if (generateAiDescriptionButton) {
+                generateAiDescriptionButton.addEventListener('click', async () => {
+                    const productName = productNameInput ? productNameInput.value : '';
+                    if (!productName) {
+                        showMessage('inventory-message', "Please enter a product name to generate a description.", false);
+                        return;
+                    }
+
+                    if (generateAiDescriptionButton) {
+                        generateAiDescriptionButton.textContent = 'Generating...';
+                        generateAiDescriptionButton.disabled = true;
+                    }
+                    if (aiSuggestion) {
+                        aiSuggestion.classList.add('hidden');
+                        aiSuggestion.textContent = '';
+                    }
+                    showMessage('inventory-message', '', true); // Clear previous message
+
+                    const prompt = `Generate a concise and professional product description for a turned component named "${productName}". Highlight its typical use cases, material properties (if applicable, assume common metals like steel, brass, aluminum), and precision manufacturing. Keep it under 50 words.`;
+
+                    try {
+                        let chatHistory = [];
+                        chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                        const payload = { contents: chatHistory };
+                        const apiKey = ""; // Canvas will provide this at runtime
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const result = await response.json();
+                        if (result.candidates && result.candidates.length > 0 &&
+                            result.candidates[0].content && result.candidates[0].content.parts &&
+                            result.candidates[0].content.parts.length > 0) {
+                            const text = result.candidates[0].content.parts[0].text;
+                            if (productDescriptionInput) productDescriptionInput.value = text; // Auto-fill description
+                            if (aiSuggestion) {
+                                aiSuggestion.textContent = `AI Suggestion: ${text}`;
+                                aiSuggestion.classList.remove('hidden');
+                            }
+                            showMessage('inventory-message', "AI description generated!", true);
+                        } else {
+                            showMessage('inventory-message', "Failed to generate AI description. Please try again.", false);
+                            console.error("Unexpected API response:", result);
+                        }
+                    } catch (error) {
+                        console.error("Error calling Gemini API:", error);
+                        showMessage('inventory-message', `Error generating AI description: ${error.message}. Check console for details.`, false);
+                    } finally {
+                        if (generateAiDescriptionButton) {
+                            generateAiDescriptionButton.textContent = 'Generate AI Description';
+                            generateAiDescriptionButton.disabled = false;
+                        }
+                    }
+                });
+            }
+        }
+
+        async function renderDeliveryChallan() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-4">Delivery Challan Management</h2>
+                    <div id="challan-message" class="hidden"></div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="challan-no" class="block text-sm font-medium text-gray-700">Challan No.</label>
+                            <input type="text" id="challan-no" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="DC-001">
+                        </div>
+                        <div>
+                            <label for="challan-date" class="block text-sm font-medium text-gray-700">Date</label>
+                            <input type="date" id="challan-date" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        </div>
+                        <div>
+                            <label for="lr-no" class="block text-sm font-medium text-gray-700">L.R. No.</label>
+                            <input type="text" id="lr-no" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="LR-XYZ">
+                        </div>
+                        <div>
+                            <label for="e-way-no" class="block text-sm font-medium text-gray-700">E-Way No.</label>
+                            <input type="text" id="e-way-no" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="EWAY-123">
+                        </div>
+                        <div>
+                            <label for="transport" class="block text-sm font-medium text-gray-700">Transport</label>
+                            <input type="text" id="transport" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="STAR TRANSPORTS">
+                        </div>
+                        <div>
+                            <label for="vehicle-no" class="block text-sm font-medium text-gray-700">Vehicle Number</label>
+                            <input type="text" id="vehicle-no" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="GJ01KH2320">
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label for="customer-select-dc" class="block text-sm font-medium text-gray-700">Select Customer</label>
+                            <select id="customer-select-dc" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                <option value="">-- Select or Manually Enter --</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="customer-name-dc" class="block text-sm font-medium text-gray-700">Customer Name</label>
+                            <input type="text" id="customer-name-dc" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="ABC Corp">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="customer-address-dc" class="block text-sm font-medium text-gray-700">Customer Address (Bill To)</label>
+                            <textarea id="customer-address-dc" rows="2" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="123 Main St, Anytown, State, Pincode"></textarea>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="customer-gstin-dc" class="block text-sm font-medium text-gray-700">Customer GSTIN</label>
+                            <input type="text" id="customer-gstin-dc" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="27XXXXX0000X1Z5">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="delivery-address-dc" class="block text-sm font-medium text-gray-700">Delivery Address (Consignee - Ship To)</label>
+                            <textarea id="delivery-address-dc" rows="2" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Delivery address if different from billing address"></textarea>
+                        </div>
+
+                        <!-- Product Selection for Challan -->
+                        <div class="md:col-span-2 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                            <h3 class="text-xl font-semibold text-gray-700 mb-3">Add Items to Challan</h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="product-select-dc" class="block text-sm font-medium text-gray-700">Select Product</label>
+                                    <select id="product-select-dc" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        <option value="">No products available</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="item-quantity-dc" class="block text-sm font-medium text-gray-700">Quantity</label>
+                                    <input type="number" id="item-quantity-dc" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 500" min="1">
+                                </div>
+                                <div class="flex items-end">
+                                    <button id="add-item-to-challan" class="w-full px-4 py-2 bg-purple-600 text-white font-semibold rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors duration-200">
+                                        Add Item
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Challan Items Table -->
+                        <div class="md:col-span-2 mt-4">
+                            <h3 class="text-xl font-semibold text-gray-700 mb-3">Items on Challan</h3>
+                            <div id="challan-items-table-container" class="overflow-x-auto">
+                                <p class="text-gray-500">No items added to this challan yet.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="create-challan-button" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md shadow-lg hover:bg-blue-700 transition-colors duration-200">
+                        Create Challan
+                    </button>
+                    <button id="print-challan-button" class="ml-4 px-6 py-3 bg-green-600 text-white font-bold rounded-md shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors duration-200">
+                        Print Challan
+                    </button>
+                    <button id="generate-challan-pdf-button" class="ml-4 px-6 py-3 bg-red-600 text-white font-bold rounded-md shadow-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200">
+                        Generate PDF
+                    </button>
+                    <p class="text-gray-600 mt-4">This section will allow you to create and manage delivery challans with GST details.</p>
+                </div>
+            `;
+
+            let currentChallanItems = [];
+            // availableProducts and availableCustomers will now come directly from appState
+            const availableProducts = appState.products;
+            const availableCustomers = appState.customers;
+
+            const challanNoInput = document.getElementById('challan-no');
+            const challanDateInput = document.getElementById('challan-date');
+            const lrNoInput = document.getElementById('lr-no');
+            const eWayNoInput = document.getElementById('e-way-no');
+            const transportInput = document.getElementById('transport');
+            const vehicleNoInput = document.getElementById('vehicle-no');
+            const customerSelectDc = document.getElementById('customer-select-dc');
+            const customerNameDc = document.getElementById('customer-name-dc');
+            const customerAddressDc = document.getElementById('customer-address-dc');
+            const customerGstinDc = document.getElementById('customer-gstin-dc');
+            const deliveryAddressDc = document.getElementById('delivery-address-dc');
+            const productSelectDc = document.getElementById('product-select-dc');
+            const itemQuantityDc = document.getElementById('item-quantity-dc');
+            const challanItemsTableContainer = document.getElementById('challan-items-table-container');
+            const addChallanItemButton = document.getElementById('add-item-to-challan');
+            const createChallanButton = document.getElementById('create-challan-button');
+            const printChallanButton = document.getElementById('print-challan-button');
+            const generateChallanPdfButton = document.getElementById('generate-challan-pdf-button');
+
+            // Set today's date as default for challan date
+            if (challanDateInput) challanDateInput.valueAsDate = new Date();
+
+
+            const renderChallanItems = () => {
+                if (!challanItemsTableContainer) { // Safety check
+                    console.warn("challan-items-table-container not found. Skipping renderChallanItems.");
+                    return;
+                }
+                if (currentChallanItems.length === 0) {
+                    challanItemsTableContainer.innerHTML = '<p class="text-gray-500">No items added to this challan yet.</p>';
+                    return;
+                }
+                let tableHtml = `
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-gray-100 border-b">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">HSN/SAC</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Qty</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Unit Price</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                currentChallanItems.forEach(item => {
+                    tableHtml += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-800">${item.name}</td>
+                            <td class="py-3 px-4 text-gray-800">${item.hsnSac || 'N/A'}</td>
+                            <td class="py-3 px-4 text-gray-800">${item.quantity}</td>
+                            <td class="py-3 px-4 text-gray-800">₹${parseFloat(item.unitPrice).toFixed(2)}</td>
+                            <td class="py-3 px-4 text-gray-800">₹${item.totalPrice.toFixed(2)}</td>
+                            <td class="py-3 px-4">
+                                <button data-id="${item.id}" class="remove-challan-item-button px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200">
+                                    Remove
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `</tbody></table>`;
+                challanItemsTableContainer.innerHTML = tableHtml;
+
+                document.querySelectorAll('.remove-challan-item-button').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const id = e.target.dataset.id;
+                        currentChallanItems = currentChallanItems.filter(item => item.id !== id);
+                        renderChallanItems();
+                        showMessage('challan-message', 'Item removed from challan.', true);
+                    });
+                });
+            };
+
+            const populateProductSelect = (products) => {
+                if (!productSelectDc) { // Safety check
+                    console.warn("product-select-dc not found. Skipping populateProductSelect.");
+                    return;
+                }
+                productSelectDc.innerHTML = '';
+                if (products.length === 0) {
+                    productSelectDc.innerHTML = '<option value="">No products available</option>';
+                    return;
+                }
+                products.forEach(product => {
+                    const option = document.createElement('option');
+                    option.value = product.id;
+                    option.textContent = `${product.name} (Qty: ${product.quantity}, Price: ₹${product.unitPrice})`;
+                    productSelectDc.appendChild(option);
+                });
+                productSelectDc.value = products.length > 0 ? products[0].id : ''; // Select first product by default
+            };
+
+            const populateCustomerSelect = (customers) => {
+                if (!customerSelectDc) { // Safety check
+                    console.warn("customer-select-dc not found. Skipping populateCustomerSelect.");
+                    return;
+                }
+                customerSelectDc.innerHTML = '<option value="">-- Select or Manually Enter --</option>';
+                if (customers.length === 0) {
+                    return;
+                }
+                customers.forEach(customer => {
+                    const option = document.createElement('option');
+                    option.value = customer.id;
+                    option.textContent = customer.name;
+                    customerSelectDc.appendChild(option);
+                });
+            };
+
+            // Load products and customers from appState
+            populateProductSelect(availableProducts);
+            populateCustomerSelect(availableCustomers);
+
+
+            if (addChallanItemButton) {
+                addChallanItemButton.addEventListener('click', () => {
+                    const selectedProductId = productSelectDc ? productSelectDc.value : '';
+                    const quantity = itemQuantityDc ? parseInt(itemQuantityDc.value, 10) : 0;
+
+                    if (!selectedProductId || isNaN(quantity) || quantity <= 0) {
+                        showMessage('challan-message', "Please select a product and enter a valid quantity.", false);
+                        return;
+                    }
+
+                    const productToAdd = availableProducts.find(p => p.id === selectedProductId);
+                    if (productToAdd) {
+                        const newItem = {
+                            ...productToAdd,
+                            id: crypto.randomUUID(), // Assign a new unique ID for the challan item
+                            quantity: quantity,
+                            totalPrice: parseFloat(productToAdd.unitPrice) * quantity
+                        };
+                        currentChallanItems.push(newItem);
+                        renderChallanItems();
+                        if (itemQuantityDc) itemQuantityDc.value = ''; // Clear quantity input
+                        showMessage('challan-message', 'Item added to challan!', true);
+                    } else {
+                        showMessage('challan-message', 'Selected product not found.', false);
+                    }
+                });
+            }
+
+            if (customerSelectDc) {
+                customerSelectDc.addEventListener('change', () => {
+                    const selectedId = customerSelectDc.value;
+                    const selectedCustomer = availableCustomers.find(cust => cust.id === selectedId);
+                    if (selectedCustomer) {
+                        if (customerNameDc) customerNameDc.value = selectedCustomer.name;
+                        if (customerAddressDc) customerAddressDc.value = selectedCustomer.address;
+                        if (customerGstinDc) customerGstinDc.value = selectedCustomer.gstin;
+                        if (deliveryAddressDc) deliveryAddressDc.value = selectedCustomer.address; // Default delivery to billing
+                    } else {
+                        if (customerNameDc) customerNameDc.value = '';
+                        if (customerAddressDc) customerAddressDc.value = '';
+                        if (customerGstinDc) customerGstinDc.value = '';
+                        if (deliveryAddressDc) deliveryAddressDc.value = '';
+                    }
+                });
+            }
+
+            if (createChallanButton) {
+                createChallanButton.addEventListener('click', async () => {
+                    const challanData = {
+                        challanNo: challanNoInput ? challanNoInput.value : '',
+                        challanDate: challanDateInput ? challanDateInput.value : '',
+                        customerName: customerNameDc ? customerNameDc.value : '',
+                        customerAddress: customerAddressDc ? customerAddressDc.value : '',
+                        customerGstin: customerGstinDc ? customerGstinDc.value : '',
+                        deliveryAddress: deliveryAddressDc ? deliveryAddressDc.value : '',
+                        lrNo: lrNoInput ? lrNoInput.value : '',
+                        eWayNo: eWayNoInput ? eWayNoInput.value : '',
+                        transport: transportInput ? transportInput.value : '',
+                        vehicleNo: vehicleNoInput ? vehicleNoInput.value : '',
+                        items: currentChallanItems,
+                        generatedAt: new Date().toISOString()
+                    };
+
+                    if (!challanData.challanNo || !challanData.challanDate || !challanData.customerName || challanData.items.length === 0) {
+                        showMessage('challan-message', "Please fill in Challan No., Date, Customer Name, and add at least one item.", false);
+                        return;
+                    }
+
+                    appState.deliveryChallans.push({ ...challanData, id: crypto.randomUUID() }); // Add to appState
+                    saveDataToLocalStorage(); // Save changes
+                    showMessage('challan-message', 'Delivery Challan created and saved successfully!', true);
+                    // Clear form
+                    if (challanNoInput) challanNoInput.value = '';
+                    if (challanDateInput) challanDateInput.valueAsDate = new Date(); // Reset to today
+                    if (customerSelectDc) customerSelectDc.value = '';
+                    if (customerNameDc) customerNameDc.value = '';
+                    if (customerAddressDc) customerAddressDc.value = '';
+                    if (customerGstinDc) customerGstinDc.value = '';
+                    if (deliveryAddressDc) deliveryAddressDc.value = '';
+                    if (lrNoInput) lrNoInput.value = '';
+                    if (eWayNoInput) eWayNoInput.value = '';
+                    if (transportInput) transportInput.value = '';
+                    if (vehicleNoInput) vehicleNoInput.value = '';
+                    currentChallanItems = [];
+                    renderChallanItems();
+                });
+            }
+
+            if (printChallanButton) printChallanButton.addEventListener('click', () => {
+                window.print();
+            });
+
+            if (generateChallanPdfButton) {
+                generateChallanPdfButton.addEventListener('click', () => {
+                    console.log("Attempting to generate PDF for Delivery Challan...");
+                    console.log("isJsPdfLoaded:", appState.isJsPdfLoaded);
+                    console.log("typeof window.jspdf:", typeof window.jspdf);
+
+                    if (!(challanNoInput && challanNoInput.value) || !(challanDateInput && challanDateInput.value) || !(customerNameDc && customerNameDc.value) || currentChallanItems.length === 0) {
+                        showMessage('challan-message', "Please fill in Challan No., Date, Customer Name, and add at least one item before generating PDF.", false);
+                        console.warn("Missing required fields for PDF generation.");
+                        return;
+                    }
+
+                    if (!appState.isJsPdfLoaded || typeof window.jspdf === 'undefined') {
+                        showMessage('challan-message', "PDF generation library is still loading or failed to load. Please wait a moment and try again.", false);
+                        console.error("jsPDF library not found or not loaded.");
+                        return;
+                    }
+
+                    try {
+                        const { jsPDF } = window.jspdf;
+                        const doc = new jsPDF('p', 'mm', 'a4');
+
+                        const pageW = doc.internal.pageSize.getWidth();
+                        const pageH = doc.internal.pageSize.getHeight();
+                        const margin = 10;
+                        const innerMargin = 2;
+
+                        doc.setFontSize(8);
+                        doc.setFont("helvetica", "normal");
+
+                        doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+
+                        let currentY = margin;
+
+                        const headerHeight = 30;
+                        doc.rect(margin, currentY, pageW - 2 * margin, headerHeight);
+
+                        doc.setFontSize(10);
+                        doc.text(appState.companyDetails.name, margin + innerMargin, currentY + 5);
+                        doc.setFontSize(8);
+                        const companyAddressLines = doc.splitTextToSize(appState.companyDetails.address, (pageW / 2) - margin - 5);
+                        let tempY = currentY + 9;
+                        companyAddressLines.forEach(line => {
+                            doc.text(line, margin + innerMargin, tempY);
+                            tempY += 3.5;
+                        });
+                        doc.text(`GSTIN/UIN: ${appState.companyDetails.gstin}`, margin + innerMargin, tempY);
+
+                        const rightColX = pageW - margin - 60;
+                        doc.setFontSize(10);
+                        doc.text(`DELIVERY CHALLAN`, pageW / 2, currentY + 5, { align: 'center' });
+                        doc.setFontSize(8);
+                        doc.text(`Challan No.`, rightColX, currentY + 5);
+                        doc.text(`${challanNoInput.value}`, rightColX + 25, currentY + 5);
+                        doc.text(`Dated`, rightColX, currentY + 10);
+                        doc.text(`${challanDateInput.value}`, rightColX + 25, currentY + 10);
+                        doc.text(`L.R. No.`, rightColX, currentY + 15);
+                        doc.text(`${lrNoInput.value}`, rightColX + 25, currentY + 15);
+                        doc.text(`E-Way No.`, rightColX, currentY + 20);
+                        doc.text(`${eWayNoInput.value}`, rightColX + 25, currentY + 20);
+                        doc.text(`Transport`, rightColX, currentY + 25);
+                        doc.text(`${transportInput.value}`, rightColX + 25, currentY + 25);
+                        doc.text(`Vehicle Number`, rightColX, currentY + 30);
+                        doc.text(`${vehicleNoInput.value}`, rightColX + 25, currentY + 30);
+
+                        currentY += headerHeight;
+
+                        const customerBoxHeight = 30;
+                        const halfPageWidth = (pageW - 2 * margin) / 2;
+
+                        doc.rect(margin, currentY, halfPageWidth, customerBoxHeight);
+                        doc.rect(margin + halfPageWidth, currentY, halfPageWidth, customerBoxHeight);
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text('Consignee (Ship To)', margin + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(9);
+                        doc.text(`${customerNameDc.value}`, margin + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(8);
+                        const deliveryAddressLines = doc.splitTextToSize(deliveryAddressDc.value, halfPageWidth - 2 * innerMargin);
+                        deliveryAddressLines.forEach(line => {
+                            doc.text(line, margin + innerMargin, tempY);
+                            tempY += 3.5;
+                        });
+                        doc.text(`GSTIN/UIN: ${customerGstinDc.value}`, margin + innerMargin, tempY);
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text('Buyer (Bill To)', margin + halfPageWidth + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(9);
+                        doc.text(`${customerNameDc.value}`, margin + halfPageWidth + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(8);
+                        const customerAddressLinesDC = doc.splitTextToSize(customerAddressDc.value, halfPageWidth - 2 * innerMargin);
+                        customerAddressLinesDC.forEach(line => {
+                            doc.text(line, margin + halfPageWidth + innerMargin, tempY);
+                            tempY += 3.5;
+                        });
+                        doc.text(`GSTIN/UIN: ${customerGstinDc.value}`, margin + halfPageWidth + innerMargin, tempY);
+
+                        currentY += customerBoxHeight;
+
+                        const tableHeaders = ["Sl No.", "Description of Goods", "HSN/SAC", "Quantity", "Rate", "per", "Disc %", "Amount"];
+                        const colWidths = [10, 50, 20, 20, 20, 10, 10, 30];
+                        let tableHeaderY = currentY;
+                        let headerX = margin;
+                        doc.setFontSize(8);
+                        doc.setFillColor(230, 230, 230);
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                        doc.setTextColor(0, 0, 0);
+
+                        tableHeaders.forEach((header, index) => {
+                            doc.text(header, headerX + innerMargin, tableHeaderY + 5);
+                            headerX += colWidths[index];
+                        });
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                        currentY += 7;
+
+                        let slNo = 1;
+                        let totalQuantity = 0;
+                        let totalAmountItems = 0;
+                        const rowHeight = 7;
+
+                        currentChallanItems.forEach(item => {
+                            if (currentY + rowHeight > pageH - 60) {
+                                doc.addPage();
+                                currentY = margin;
+                                doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+                            }
+
+                            let rowX = margin;
+                            doc.text(`${slNo++}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[0];
+                            doc.text(`${item.name}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[1];
+                            doc.text(`${item.hsnSac || 'N/A'}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[2];
+                            doc.text(`${item.quantity}`, rowX + innerMargin, currentY + 5);
+                            totalQuantity += item.quantity;
+                            rowX += colWidths[3];
+                            doc.text(`${parseFloat(item.unitPrice).toFixed(2)}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[4];
+                            doc.text(`No`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[5];
+                            doc.text(`0`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[6];
+                            doc.text(`${item.totalPrice.toFixed(2)}`, rowX + innerMargin, currentY + 5);
+                            totalAmountItems += item.totalPrice;
+
+                            doc.rect(margin, currentY, pageW - 2 * margin, rowHeight);
+                            let currentColX = margin;
+                            colWidths.forEach(width => {
+                                doc.line(currentColX + width, currentY, currentColX + width, currentY + rowHeight);
+                                currentColX += width;
+                            });
+
+                            currentY += rowHeight;
+                        });
+
+                        doc.line(margin, currentY, pageW - margin, currentY);
+                        currentY += 2;
+
+                        const cgstAmount = totalAmountItems * 0.09;
+                        const sgstAmount = totalAmountItems * 0.09;
+                        const totalGST = cgstAmount + sgstAmount;
+
+                        doc.setFontSize(8);
+                        doc.text(`CGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${cgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 5;
+                        doc.text(`SGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${sgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 5;
+
+                        doc.line(margin, currentY, pageW - margin, currentY);
+                        currentY += 2;
+                        doc.setFontSize(9);
+                        doc.text(`Total`, margin + colWidths[0] + colWidths[1] + colWidths[2] + innerMargin, currentY + 5);
+                        doc.text(`${totalQuantity}`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + innerMargin, currentY + 5);
+                        doc.text(`${(totalAmountItems + totalGST).toFixed(2)}`, pageW - margin - innerMargin, currentY + 5, { align: 'right' });
+                        currentY += 7;
+
+                        doc.setFontSize(9);
+                        doc.text(`Amount Chargeable (in words):`, margin + innerMargin, currentY + 5);
+                        doc.setFontSize(10);
+                        doc.text(`${numberToWordsIndian(totalAmountItems + totalGST)}`, margin + innerMargin, currentY + 10);
+                        currentY += 15;
+
+                        const bottomBoxHeight = 50;
+                        doc.rect(margin, currentY, halfPageWidth, bottomBoxHeight);
+                        doc.rect(margin + halfPageWidth, currentY, halfPageWidth, bottomBoxHeight);
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text('Terms and Conditions', margin + innerMargin, tempY);
+                        tempY += 4;
+                        const termsAndConditions = [
+                            "1. Subject to Ahmedabad Jurisdiction.",
+                            "2. Our responsibility ceases as soon as the goods leave our premises.",
+                            "3. Goods once sold will not be taken back.",
+                            "4. Delivery ex-premises."
+                        ];
+                        termsAndConditions.forEach((term, index) => {
+                            doc.text(`${term}`, margin + innerMargin, tempY + (index * 3.5));
+                        });
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text(`Taxable Value`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${totalAmountItems.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`Add: CGST`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${cgstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`Add: SGST`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${sgstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`Total Tax Amount`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${totalGST.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`Total Amount After Tax`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${(totalAmountItems + totalGST).toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`E. & O.E.`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+
+                        currentY += bottomBoxHeight;
+
+                        doc.setFontSize(8);
+                        doc.text(`GST Payable on Reverse Charge: No`, margin + innerMargin, currentY + 5);
+                        doc.text(`Certified that the particulars given are true and correct.`, margin + innerMargin, currentY + 10);
+                        doc.setFontSize(9);
+                        doc.text(`For ${appState.companyDetails.name}`, pageW - margin - 40, currentY + 15, { align: 'center' });
+                        doc.text(`Authorized Signatory`, pageW - margin - 40, currentY + 30, { align: 'center' });
+
+
+                        doc.save(`DeliveryChallan_${challanNoInput.value}.pdf`);
+                        showMessage('challan-message', "PDF generated successfully!", true);
+                        console.log("PDF generation for Delivery Challan completed.");
+                    } catch (error) {
+                        console.error("Error during Delivery Challan PDF generation:", error);
+                        showMessage('challan-message', `Error generating PDF: ${error.message}. Check console for details.`, false);
+                    }
+                });
+            }
+        }
+
+        async function renderInvoice() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-4">Invoice Generation</h2>
+                    <div id="invoice-message" class="hidden"></div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="invoice-no" class="block text-sm font-medium text-gray-700">Invoice No.</label>
+                            <input type="text" id="invoice-no" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="INV-001">
+                        </div>
+                        <div>
+                            <label for="invoice-date" class="block text-sm font-medium text-gray-700">Date</label>
+                            <input type="date" id="invoice-date" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        </div>
+                        <div>
+                            <label for="lr-no-inv" class="block text-sm font-medium text-gray-700">L.R. No.</label>
+                            <input type="text" id="lr-no-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="LR-XYZ">
+                        </div>
+                        <div>
+                            <label for="e-way-no-inv" class="block text-sm font-medium text-gray-700">E-Way No.</label>
+                            <input type="text" id="e-way-no-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="EWAY-123">
+                        </div>
+                        <div>
+                            <label for="transport-inv" class="block text-sm font-medium text-gray-700">Transport</label>
+                            <input type="text" id="transport-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="STAR TRANSPORTS">
+                        </div>
+                        <div>
+                            <label for="vehicle-no-inv" class="block text-sm font-medium text-gray-700">Vehicle Number</label>
+                            <input type="text" id="vehicle-no-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="GJ01KH2320">
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label for="customer-select-inv" class="block text-sm font-medium text-gray-700">Select Customer</label>
+                            <select id="customer-select-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                <option value="">-- Select or Manually Enter --</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="customer-name-inv" class="block text-sm font-medium text-gray-700">Customer Name</label>
+                            <input type="text" id="customer-name-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="ABC Corp">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="customer-address-inv" class="block text-sm font-medium text-gray-700">Customer Address (Bill To)</label>
+                            <textarea id="customer-address-inv" rows="2" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="123 Main St, Anytown, State, Pincode"></textarea>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="customer-gstin-inv" class="block text-sm font-medium text-gray-700">Customer GSTIN</label>
+                            <input type="text" id="customer-gstin-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="27XXXXX0000X1Z5">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="delivery-address-inv" class="block text-sm font-medium text-gray-700">Delivery Address (if different)</label>
+                            <textarea id="delivery-address-inv" rows="2" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Delivery address if different from billing address"></textarea>
+                        </div>
+
+                        <!-- Product Selection for Invoice -->
+                        <div class="md:col-span-2 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                            <h3 class="text-xl font-semibold text-gray-700 mb-3">Add Items to Invoice</h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="product-select-inv" class="block text-sm font-medium text-gray-700">Select Product</label>
+                                    <select id="product-select-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        <option value="">No products available</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="item-quantity-inv" class="block text-sm font-medium text-gray-700">Quantity</label>
+                                    <input type="number" id="item-quantity-inv" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 500" min="1">
+                                </div>
+                                <div class="flex items-end">
+                                    <button id="add-item-to-invoice" class="w-full px-4 py-2 bg-purple-600 text-white font-semibold rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors duration-200">
+                                        Add Item
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Invoice Items Table -->
+                        <div class="md:col-span-2 mt-4">
+                            <h3 class="text-xl font-semibold text-gray-700 mb-3">Items on Invoice</h3>
+                            <div id="invoice-items-table-container" class="overflow-x-auto">
+                                <p class="text-gray-500">No items added to this invoice yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GST and Total Amount Calculation Inputs -->
+                    <div class="md:col-span-2 grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <label for="taxable-value" class="block text-sm font-medium text-gray-700">Total Taxable Value</label>
+                            <input type="number" id="taxable-value" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md font-bold" readonly value="0.00">
+                        </div>
+                        <div>
+                            <label for="cgst-percent" class="block text-sm font-medium text-gray-700">CGST (%)</label>
+                            <input type="number" id="cgst-percent" value="9" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 9">
+                            <label for="cgst-amount" class="block text-sm font-medium text-gray-700 mt-2">CGST Amount</label>
+                            <input type="number" id="cgst-amount" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" readonly value="0.00">
+                        </div>
+                        <div>
+                            <label for="sgst-percent" class="block text-sm font-medium text-gray-700">SGST (%)</label>
+                            <input type="number" id="sgst-percent" value="9" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 9">
+                            <label for="sgst-amount" class="block text-sm font-medium text-gray-700 mt-2">SGST Amount</label>
+                            <input type="number" id="sgst-amount" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" readonly value="0.00">
+                        </div>
+                        <div>
+                            <label for="igst-percent" class="block text-sm font-medium text-gray-700">IGST (%)</label>
+                            <input type="number" id="igst-percent" value="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 18">
+                            <label for="igst-amount" class="block text-sm font-medium text-gray-700 mt-2">IGST Amount</label>
+                            <input type="number" id="igst-amount" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" readonly value="0.00">
+                        </div>
+                        <div class="col-span-2">
+                            <label for="total-amount" class="block text-sm font-medium text-gray-700">Total Invoice Amount (₹)</label>
+                            <input type="number" id="total-amount" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md font-bold text-lg bg-blue-50 text-blue-800" readonly value="0.00">
+                        </div>
+                    </div>
+                    <button id="generate-invoice-button" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200">
+                        Generate Invoice
+                    </button>
+                    <button id="print-invoice-button" class="ml-4 px-6 py-3 bg-green-600 text-white font-bold rounded-md shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors duration-200">
+                        Print Invoice
+                    </button>
+                    <button id="generate-invoice-pdf-button" class="ml-4 px-6 py-3 bg-red-600 text-white font-bold rounded-md shadow-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200">
+                        Generate PDF
+                    </button>
+                    <p class="text-gray-600 mt-4">This section will handle invoice creation and tracking with comprehensive GST calculations.</p>
+                </div>
+            `;
+
+            let currentInvoiceItems = [];
+            // availableProducts and availableCustomers will now come directly from appState
+            const availableProducts = appState.products;
+            const availableCustomers = appState.customers;
+
+            const invoiceNoInput = document.getElementById('invoice-no');
+            const invoiceDateInput = document.getElementById('invoice-date');
+            const lrNoInvInput = document.getElementById('lr-no-inv');
+            const eWayNoInvInput = document.getElementById('e-way-no-inv');
+            const transportInvInput = document.getElementById('transport-inv');
+            const vehicleNoInvInput = document.getElementById('vehicle-no-inv');
+            const customerSelectInv = document.getElementById('customer-select-inv');
+            const customerNameInv = document.getElementById('customer-name-inv');
+            const customerAddressInv = document.getElementById('customer-address-inv');
+            const customerGstinInv = document.getElementById('customer-gstin-inv');
+            const deliveryAddressInv = document.getElementById('delivery-address-inv');
+            const productSelectInv = document.getElementById('product-select-inv');
+            const itemQuantityInv = document.getElementById('item-quantity-inv');
+            const invoiceItemsTableContainer = document.getElementById('invoice-items-table-container');
+            const addInvoiceItemButton = document.getElementById('add-item-to-invoice');
+            const taxableValueInput = document.getElementById('taxable-value');
+            const cgstPercentInput = document.getElementById('cgst-percent');
+            const cgstAmountInput = document.getElementById('cgst-amount');
+            const sgstPercentInput = document.getElementById('sgst-percent');
+            const sgstAmountInput = document.getElementById('sgst-amount');
+            const igstPercentInput = document.getElementById('igst-percent');
+            const igstAmountInput = document.getElementById('igst-amount');
+            const totalAmountInput = document.getElementById('total-amount');
+            const generateInvoiceButton = document.getElementById('generate-invoice-button');
+            const printInvoiceButton = document.getElementById('print-invoice-button');
+            const generateInvoicePdfButton = document.getElementById('generate-invoice-pdf-button');
+
+            // Set today's date as default for invoice date
+            if (invoiceDateInput) invoiceDateInput.valueAsDate = new Date();
+
+            const calculateTotals = () => {
+                let totalTaxableValue = currentInvoiceItems.reduce((sum, item) => sum + item.totalPrice, 0);
+                const cgstPercent = cgstPercentInput ? parseFloat(cgstPercentInput.value) || 0 : 0;
+                const sgstPercent = sgstPercentInput ? parseFloat(sgstPercentInput.value) || 0 : 0;
+                const igstPercent = igstPercentInput ? parseFloat(igstPercentInput.value) || 0 : 0;
+
+                const cgstAmount = totalTaxableValue * (cgstPercent / 100);
+                const sgstAmount = totalTaxableValue * (sgstPercent / 100);
+                const igstAmount = totalTaxableValue * (igstPercent / 100);
+                const totalAmount = totalTaxableValue + cgstAmount + sgstAmount + igstAmount;
+
+                if (taxableValueInput) taxableValueInput.value = totalTaxableValue.toFixed(2);
+                if (cgstAmountInput) cgstAmountInput.value = cgstAmount.toFixed(2);
+                if (sgstAmountInput) sgstAmountInput.value = sgstAmount.toFixed(2);
+                if (igstAmountInput) igstAmountInput.value = igstAmount.toFixed(2);
+                if (totalAmountInput) totalAmountInput.value = totalAmount.toFixed(2);
+            };
+
+            const renderInvoiceItems = () => {
+                if (!invoiceItemsTableContainer) { // Safety check
+                    console.warn("invoice-items-table-container not found. Skipping renderInvoiceItems.");
+                    return;
+                }
+                if (currentInvoiceItems.length === 0) {
+                    invoiceItemsTableContainer.innerHTML = '<p class="text-gray-500">No items added to this invoice yet.</p>';
+                    return;
+                }
+                let tableHtml = `
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-gray-100 border-b">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">HSN/SAC</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Qty</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Unit Price</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                currentInvoiceItems.forEach(item => {
+                    tableHtml += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-800">${item.name}</td>
+                            <td class="py-3 px-4 text-gray-800">${item.hsnSac || 'N/A'}</td>
+                            <td class="py-3 px-4 text-gray-800">${item.quantity}</td>
+                            <td class="py-3 px-4 text-gray-800">₹${parseFloat(item.unitPrice).toFixed(2)}</td>
+                            <td class="py-3 px-4 text-gray-800">₹${item.totalPrice.toFixed(2)}</td>
+                            <td class="py-3 px-4">
+                                <button data-id="${item.id}" class="remove-invoice-item-button px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200">
+                                    Remove
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `</tbody></table>`;
+                invoiceItemsTableContainer.innerHTML = tableHtml;
+
+                document.querySelectorAll('.remove-invoice-item-button').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const id = e.target.dataset.id;
+                        currentInvoiceItems = currentInvoiceItems.filter(item => item.id !== id);
+                        renderInvoiceItems();
+                        calculateTotals();
+                        showMessage('invoice-message', 'Item removed from invoice.', true);
+                    });
+                });
+            };
+
+            const populateProductSelect = (products) => {
+                if (!productSelectInv) { // Safety check
+                    console.warn("product-select-inv not found. Skipping populateProductSelect.");
+                    return;
+                }
+                productSelectInv.innerHTML = '';
+                if (products.length === 0) {
+                    productSelectInv.innerHTML = '<option value="">No products available</option>';
+                    return;
+                }
+                products.forEach(product => {
+                    const option = document.createElement('option');
+                    option.value = product.id;
+                    option.textContent = `${product.name} (Qty: ${product.quantity}, Price: ₹${product.unitPrice})`;
+                    productSelectInv.appendChild(option);
+                });
+                productSelectInv.value = products.length > 0 ? products[0].id : '';
+            };
+
+            const populateCustomerSelect = (customers) => {
+                if (!customerSelectInv) { // Safety check
+                    console.warn("customer-select-inv not found. Skipping populateCustomerSelect.");
+                    return;
+                }
+                customerSelectInv.innerHTML = '<option value="">-- Select or Manually Enter --</option>';
+                if (customers.length === 0) {
+                    return;
+                }
+                customers.forEach(customer => {
+                    const option = document.createElement('option');
+                    option.value = customer.id;
+                    option.textContent = customer.name;
+                    customerSelectInv.appendChild(option);
+                });
+            };
+
+            // Load products and customers from appState
+            populateProductSelect(availableProducts);
+            populateCustomerSelect(availableCustomers);
+
+            if (addInvoiceItemButton) {
+                addInvoiceItemButton.addEventListener('click', () => {
+                    const selectedProductId = productSelectInv ? productSelectInv.value : '';
+                    const quantity = itemQuantityInv ? parseInt(itemQuantityInv.value, 10) : 0;
+
+                    if (!selectedProductId || isNaN(quantity) || quantity <= 0) {
+                        showMessage('invoice-message', "Please select a product and enter a valid quantity.", false);
+                        return;
+                    }
+
+                    const productToAdd = availableProducts.find(p => p.id === selectedProductId);
+                    if (productToAdd) {
+                        const newItem = {
+                            ...productToAdd,
+                            id: crypto.randomUUID(), // Assign a new unique ID for the invoice item
+                            quantity: quantity,
+                            totalPrice: parseFloat(productToAdd.unitPrice) * quantity
+                        };
+                        currentInvoiceItems.push(newItem);
+                        renderInvoiceItems();
+                        calculateTotals();
+                        if (itemQuantityInv) itemQuantityInv.value = ''; // Clear quantity input
+                        showMessage('invoice-message', 'Item added to invoice!', true);
+                    } else {
+                        showMessage('invoice-message', 'Selected product not found.', false);
+                    }
+                });
+            }
+
+            if (customerSelectInv) {
+                customerSelectInv.addEventListener('change', () => {
+                    const selectedId = customerSelectInv.value;
+                    const selectedCustomer = availableCustomers.find(cust => cust.id === selectedId);
+                    if (selectedCustomer) {
+                        if (customerNameInv) customerNameInv.value = selectedCustomer.name;
+                        if (customerAddressInv) customerAddressInv.value = selectedCustomer.address;
+                        if (customerGstinInv) customerGstinInv.value = selectedCustomer.gstin;
+                        if (deliveryAddressInv) deliveryAddressInv.value = selectedCustomer.address; // Default delivery to billing
+                    } else {
+                        if (customerNameInv) customerNameInv.value = '';
+                        if (customerAddressInv) customerAddressInv.value = '';
+                        if (customerGstinInv) customerGstinInv.value = '';
+                        if (deliveryAddressInv) deliveryAddressInv.value = '';
+                    }
+                });
+            }
+
+            if (cgstPercentInput) cgstPercentInput.addEventListener('input', calculateTotals);
+            if (sgstPercentInput) sgstPercentInput.addEventListener('input', calculateTotals);
+            if (igstPercentInput) igstPercentInput.addEventListener('input', calculateTotals);
+
+            if (generateInvoiceButton) {
+                generateInvoiceButton.addEventListener('click', async () => {
+                    const invoiceData = {
+                        invoiceNo: invoiceNoInput ? invoiceNoInput.value : '',
+                        invoiceDate: invoiceDateInput ? invoiceDateInput.value : '',
+                        customerName: customerNameInv ? customerNameInv.value : '',
+                        customerAddress: customerAddressInv ? customerAddressInv.value : '',
+                        customerGstin: customerGstinInv ? customerGstinInv.value : '',
+                        deliveryAddress: deliveryAddressInv ? deliveryAddressInv.value : '',
+                        lrNo: lrNoInvInput ? lrNoInvInput.value : '',
+                        eWayNo: eWayNoInvInput ? eWayNoInvInput.value : '',
+                        transport: transportInvInput ? transportInvInput.value : '',
+                        vehicleNo: vehicleNoInvInput ? vehicleNoInvInput.value : '',
+                        items: currentInvoiceItems,
+                        totalTaxableValue: taxableValueInput ? taxableValueInput.value : '0.00',
+                        cgstPercent: cgstPercentInput ? cgstPercentInput.value : '0',
+                        cgstAmount: cgstAmountInput ? cgstAmountInput.value : '0.00',
+                        sgstPercent: sgstPercentInput ? sgstPercentInput.value : '0',
+                        sgstAmount: sgstAmountInput ? sgstAmountInput.value : '0.00',
+                        igstPercent: igstPercentInput ? igstPercentInput.value : '0',
+                        igstAmount: igstAmountInput ? igstAmountInput.value : '0.00',
+                        totalAmount: totalAmountInput ? totalAmountInput.value : '0.00',
+                        generatedAt: new Date().toISOString()
+                    };
+
+                    if (!invoiceData.invoiceNo || !invoiceData.invoiceDate || !invoiceData.customerName || invoiceData.items.length === 0) {
+                        showMessage('invoice-message', "Please fill in Invoice No., Date, Customer Name, and add at least one item.", false);
+                        return;
+                    }
+
+                    appState.invoices.push({ ...invoiceData, id: crypto.randomUUID() }); // Add to appState
+                    saveDataToLocalStorage(); // Save changes
+                    showMessage('invoice-message', 'Invoice generated and saved successfully!', true);
+                    // Clear form
+                    if (invoiceNoInput) invoiceNoInput.value = '';
+                    if (invoiceDateInput) invoiceDateInput.valueAsDate = new Date(); // Reset to today
+                    if (customerSelectInv) customerSelectInv.value = '';
+                    if (customerNameInv) customerNameInv.value = '';
+                    if (customerAddressInv) customerAddressInv.value = '';
+                    if (customerGstinInv) customerGstinInv.value = '';
+                    if (deliveryAddressInv) deliveryAddressInv.value = '';
+                    if (lrNoInvInput) lrNoInvInput.value = '';
+                    if (eWayNoInvInput) eWayNoInvInput.value = '';
+                    if (transportInvInput) transportInvInput.value = '';
+                    if (vehicleNoInvInput) vehicleNoInvInput.value = '';
+                    currentInvoiceItems = [];
+                    renderInvoiceItems();
+                    if (cgstPercentInput) cgstPercentInput.value = 9;
+                    if (sgstPercentInput) sgstPercentInput.value = 9;
+                    if (igstPercentInput) igstPercentInput.value = 0;
+                    calculateTotals(); // Recalculate to reset amounts
+                });
+            }
+
+            if (printInvoiceButton) printInvoiceButton.addEventListener('click', () => {
+                window.print();
+            });
+
+            if (generateInvoicePdfButton) {
+                generateInvoicePdfButton.addEventListener('click', () => {
+                    console.log("Attempting to generate PDF for Invoice...");
+                    console.log("isJsPdfLoaded:", appState.isJsPdfLoaded);
+                    console.log("typeof window.jspdf:", typeof window.jspdf);
+
+                    if (!(invoiceNoInput && invoiceNoInput.value) || !(invoiceDateInput && invoiceDateInput.value) || !(customerNameInv && customerNameInv.value) || currentInvoiceItems.length === 0) {
+                        showMessage('invoice-message', "Please fill in Invoice No., Date, Customer Name, and add at least one item before generating PDF.", false);
+                        console.warn("Missing required fields for PDF generation.");
+                        return;
+                    }
+
+                    if (!appState.isJsPdfLoaded || typeof window.jspdf === 'undefined') {
+                        showMessage('invoice-message', "PDF generation library is still loading or failed to load. Please wait a moment and try again.", false);
+                        console.error("jsPDF library not found or not loaded.");
+                        return;
+                    }
+
+                    try {
+                        const { jsPDF } = window.jspdf;
+                        const doc = new jsPDF('p', 'mm', 'a4');
+
+                        const pageW = doc.internal.pageSize.getWidth();
+                        const pageH = doc.internal.pageSize.getHeight();
+                        const margin = 10;
+                        const innerMargin = 2;
+
+                        doc.setFontSize(8);
+                        doc.setFont("helvetica", "normal");
+
+                        doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+
+                        let currentY = margin;
+
+                        const headerHeight = 30;
+                        doc.rect(margin, currentY, pageW - 2 * margin, headerHeight);
+
+                        doc.setFontSize(10);
+                        doc.text(appState.companyDetails.name, margin + innerMargin, currentY + 5);
+                        doc.setFontSize(8);
+                        const companyAddressLines = doc.splitTextToSize(appState.companyDetails.address, (pageW / 2) - margin - 5);
+                        let tempY = currentY + 9;
+                        companyAddressLines.forEach(line => {
+                            doc.text(line, margin + innerMargin, tempY);
+                            tempY += 3.5;
+                        });
+                        doc.text(`GSTIN/UIN: ${appState.companyDetails.gstin}`, margin + innerMargin, tempY);
+
+                        const rightColX = pageW - margin - 60;
+                        doc.setFontSize(10);
+                        doc.text(`TAX INVOICE`, pageW / 2, currentY + 5, { align: 'center' });
+                        doc.setFontSize(8);
+                        doc.text(`Invoice No.`, rightColX, currentY + 5);
+                        doc.text(`${invoiceNoInput.value}`, rightColX + 25, currentY + 5);
+                        doc.text(`Dated`, rightColX, currentY + 10);
+                        doc.text(`${invoiceDateInput.value}`, rightColX + 25, currentY + 10);
+                        doc.text(`L.R. No.`, rightColX, currentY + 15);
+                        doc.text(`${lrNoInvInput.value}`, rightColX + 25, currentY + 15);
+                        doc.text(`E-Way No.`, rightColX, currentY + 20);
+                        doc.text(`${eWayNoInvInput.value}`, rightColX + 25, currentY + 20);
+                        doc.text(`Transport`, rightColX, currentY + 25);
+                        doc.text(`${transportInvInput.value}`, rightColX + 25, currentY + 25);
+                        doc.text(`Vehicle Number`, rightColX, currentY + 30);
+                        doc.text(`${vehicleNoInvInput.value}`, rightColX + 25, currentY + 30);
+
+                        currentY += headerHeight;
+
+                        const customerBoxHeight = 30;
+                        const halfPageWidth = (pageW - 2 * margin) / 2;
+
+                        doc.rect(margin, currentY, halfPageWidth, customerBoxHeight);
+                        doc.rect(margin + halfPageWidth, currentY, halfPageWidth, customerBoxHeight);
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text('Consignee (Ship To)', margin + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(9);
+                        doc.text(`${customerNameInv.value}`, margin + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(8);
+                        const deliveryAddressLines = doc.splitTextToSize(deliveryAddressInv.value, halfPageWidth - 2 * innerMargin);
+                        deliveryAddressLines.forEach(line => {
+                            doc.text(line, margin + innerMargin, tempY);
+                            tempY += 3.5;
+                        });
+                        doc.text(`GSTIN/UIN: ${customerGstinInv.value}`, margin + innerMargin, tempY);
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text('Buyer (Bill To)', margin + halfPageWidth + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(9);
+                        doc.text(`${customerNameInv.value}`, margin + halfPageWidth + innerMargin, tempY);
+                        tempY += 4;
+                        doc.setFontSize(8);
+                        const customerAddressLinesInv = doc.splitTextToSize(customerAddressInv.value, halfPageWidth - 2 * innerMargin);
+                        customerAddressLinesInv.forEach(line => {
+                            doc.text(line, margin + halfPageWidth + innerMargin, tempY);
+                            tempY += 3.5;
+                        });
+                        doc.text(`GSTIN/UIN: ${customerGstinInv.value}`, margin + halfPageWidth + innerMargin, tempY);
+
+                        currentY += customerBoxHeight;
+
+                        const tableHeaders = ["Sl No.", "Description of Goods", "HSN/SAC", "Quantity", "Rate", "per", "Disc %", "Amount"];
+                        const colWidths = [10, 50, 20, 20, 20, 10, 10, 30];
+                        let tableHeaderY = currentY;
+                        let headerX = margin;
+                        doc.setFontSize(8);
+                        doc.setFillColor(230, 230, 230);
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                        doc.setTextColor(0, 0, 0);
+
+                        tableHeaders.forEach((header, index) => {
+                            doc.text(header, headerX + innerMargin, tableHeaderY + 5);
+                            headerX += colWidths[index];
+                        });
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                        currentY += 7;
+
+                        let slNo = 1;
+                        let totalQuantity = 0;
+                        let totalAmountItems = 0;
+                        const rowHeight = 7;
+
+                        currentInvoiceItems.forEach(item => {
+                            if (currentY + rowHeight > pageH - 60) {
+                                doc.addPage();
+                                currentY = margin;
+                                doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+                            }
+
+                            let rowX = margin;
+                            doc.text(`${slNo++}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[0];
+                            doc.text(`${item.name}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[1];
+                            doc.text(`${item.hsnSac || 'N/A'}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[2];
+                            doc.text(`${item.quantity}`, rowX + innerMargin, currentY + 5);
+                            totalQuantity += item.quantity;
+                            rowX += colWidths[3];
+                            doc.text(`${parseFloat(item.unitPrice).toFixed(2)}`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[4];
+                            doc.text(`No`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[5];
+                            doc.text(`0`, rowX + innerMargin, currentY + 5);
+                            rowX += colWidths[6];
+                            doc.text(`${item.totalPrice.toFixed(2)}`, rowX + innerMargin, currentY + 5);
+                            totalAmountItems += item.totalPrice;
+
+                            doc.rect(margin, currentY, pageW - 2 * margin, rowHeight);
+                            let currentColX = margin;
+                            colWidths.forEach(width => {
+                                doc.line(currentColX + width, currentY, currentColX + width, currentY + rowHeight);
+                                currentColX += width;
+                            });
+
+                            currentY += rowHeight;
+                        });
+
+                        doc.line(margin, currentY, pageW - margin, currentY);
+                        currentY += 2;
+
+                        const cgstAmount = parseFloat(taxableValueInput.value) * (parseFloat(cgstPercentInput.value) / 100);
+                        const sgstAmount = parseFloat(taxableValueInput.value) * (parseFloat(sgstPercentInput.value) / 100);
+                        const igstAmount = parseFloat(taxableValueInput.value) * (parseFloat(igstPercentInput.value) / 100);
+                        const totalGST = cgstAmount + sgstAmount + igstAmount;
+
+                        doc.setFontSize(8);
+                        doc.text(`CGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${cgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 5;
+                        doc.text(`SGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${sgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 5;
+                        if (igstAmount > 0) {
+                            doc.text(`IGST`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                            doc.text(`${igstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                            currentY += 5;
+                        }
+
+                        doc.line(margin, currentY, pageW - margin, currentY);
+                        currentY += 2;
+                        doc.setFontSize(9);
+                        doc.text(`Total`, margin + colWidths[0] + colWidths[1] + colWidths[2] + innerMargin, currentY + 5);
+                        doc.text(`${totalQuantity}`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + innerMargin, currentY + 5);
+                        doc.text(`${parseFloat(totalAmountInput.value).toFixed(2)}`, pageW - margin - innerMargin, currentY + 5, { align: 'right' });
+                        currentY += 7;
+
+                        doc.setFontSize(9);
+                        doc.text(`Amount Chargeable (in words):`, margin + innerMargin, currentY + 5);
+                        doc.setFontSize(10);
+                        doc.text(`${numberToWordsIndian(parseFloat(totalAmountInput.value))}`, margin + innerMargin, currentY + 10);
+                        currentY += 15;
+
+                        const bottomBoxHeight = 50;
+                        doc.rect(margin, currentY, halfPageWidth, bottomBoxHeight);
+                        doc.rect(margin + halfPageWidth, currentY, halfPageWidth, bottomBoxHeight);
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text('Terms and Conditions', margin + innerMargin, tempY);
+                        tempY += 4;
+                        const termsAndConditions = [
+                            "1. Subject to Ahmedabad Jurisdiction.",
+                            "2. Our responsibility ceases as soon as the goods leave our premises.",
+                            "3. Goods once sold will not be taken back.",
+                            "4. Delivery ex-premises."
+                        ];
+                        termsAndConditions.forEach((term, index) => {
+                            doc.text(`${term}`, margin + innerMargin, tempY + (index * 3.5));
+                        });
+
+                        tempY = currentY + 3;
+                        doc.setFontSize(8);
+                        doc.text(`Taxable Value`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${parseFloat(taxableValueInput.value).toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`Add: CGST`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${cgstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`Add: SGST`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${sgstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        if (igstAmount > 0) {
+                            doc.text(`Add: IGST`, margin + halfPageWidth + innerMargin, tempY);
+                            doc.text(`${igstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                            tempY += 5;
+                        }
+                        doc.text(`Total Tax Amount`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${totalGST.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`Total Amount After Tax`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${parseFloat(totalAmountInput.value).toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
+                        doc.text(`E. & O.E.`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+
+                        currentY += bottomBoxHeight;
+
+                        doc.setFontSize(8);
+                        doc.text(`GST Payable on Reverse Charge: No`, margin + innerMargin, currentY + 5);
+                        doc.text(`Certified that the particulars given are true and correct.`, margin + innerMargin, currentY + 10);
+                        doc.setFontSize(9);
+                        doc.text(`For ${appState.companyDetails.name}`, pageW - margin - 40, currentY + 15, { align: 'center' });
+                        doc.text(`Authorized Signatory`, pageW - margin - 40, currentY + 30, { align: 'center' });
+
+
+                        doc.save(`Invoice_${invoiceNoInput.value}.pdf`);
+                        showMessage('invoice-message', "PDF generated successfully!", true);
+                        console.log("PDF generation for Invoice completed.");
+                    } catch (error) {
+                        console.error("Error during Invoice PDF generation:", error);
+                        showMessage('invoice-message', `Error generating PDF: ${error.message}. Check console for details.`, false);
+                    }
+                });
+            }
+
+            calculateTotals(); // Initial calculation
+        }
+
+        async function renderInward() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">Inward Goods Tracking</h2>
+                    <div id="inward-message" class="hidden"></div>
+
+                    <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="text-2xl font-semibold text-gray-700 mb-4">Add New Inward Entry</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="supplier-name" class="block text-sm font-medium text-gray-700">Supplier Name</label>
+                                <input type="text" id="supplier-name" name="supplierName" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., Metal Suppliers Inc.">
+                            </div>
+                            <div>
+                                <label for="inward-challan-invoice-no" class="block text-sm font-medium text-gray-700">Challan/Invoice No.</label>
+                                <input type="text" id="inward-challan-invoice-no" name="challanInvoiceNo" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., INV-SUP-2023-001">
+                            </div>
+                            <div>
+                                <label for="inward-date" class="block text-sm font-medium text-gray-700">Date</label>
+                                <input type="date" id="inward-date" name="date" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="inward-items" class="block text-sm font-medium text-gray-700">Items Received (e.g., Raw Material A, 500kg; Component B, 1000pcs)</label>
+                                <textarea id="inward-items" name="items" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="List items, quantities, and units"></textarea>
+                            </div>
+                        </div>
+                        <button id="add-inward-entry-button" class="px-6 py-3 bg-green-600 text-white font-bold rounded-md shadow-lg hover:bg-green-700 transition-colors duration-200">
+                            Add Inward Entry
+                        </button>
+                    </div>
+
+                    <h3 class="text-2xl font-semibold text-gray-700 mb-4">Recent Inward Entries</h3>
+                    <div id="inward-list-container" class="overflow-x-auto">
+                        <p class="text-gray-500">Loading inward entries...</p>
+                    </div>
+                </div>
+            `;
+
+            const supplierNameInput = document.getElementById('supplier-name');
+            const challanInvoiceNoInput = document.getElementById('inward-challan-invoice-no');
+            const inwardDateInput = document.getElementById('inward-date');
+            const inwardItemsInput = document.getElementById('inward-items');
+            const addInwardEntryButton = document.getElementById('add-inward-entry-button');
+            const inwardListContainer = document.getElementById('inward-list-container');
+
+            // Set today's date as default for inward date
+            if (inwardDateInput) inwardDateInput.valueAsDate = new Date();
+
+            const renderInwardList = (entries) => {
+                if (!inwardListContainer) { // Safety check
+                    console.warn("inward-list-container not found. Skipping renderInwardList.");
+                    return;
+                }
+                if (entries.length === 0) {
+                    inwardListContainer.innerHTML = '<p class="text-gray-500">No inward entries found.</p>';
+                    return;
+                }
+                let tableHtml = `
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-gray-100 border-b">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Supplier Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Challan/Invoice No.</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Items</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                entries.forEach(entry => {
+                    tableHtml += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-800">${entry.supplierName}</td>
+                            <td class="py-3 px-4 text-gray-800">${entry.challanInvoiceNo}</td>
+                            <td class="py-3 px-4 text-gray-800">${entry.date}</td>
+                            <td class="py-3 px-4 text-gray-600 text-sm">${entry.items}</td>
+                            <td class="py-3 px-4">
+                                <button data-id="${entry.id}" class="delete-inward-button px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `</tbody></table>`;
+                inwardListContainer.innerHTML = tableHtml;
+
+                document.querySelectorAll('.delete-inward-button').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const id = e.target.dataset.id;
+                        appState.inwardEntries = appState.inwardEntries.filter(entry => entry.id !== id); // Update appState
+                        saveDataToLocalStorage(); // Save changes
+                        renderInwardList(appState.inwardEntries); // Re-render list
+                        showMessage('inward-message', 'Inward entry deleted successfully!', true);
+                    });
+                });
+            };
+
+            // Initial render of inward entries from appState
+            renderInwardList(appState.inwardEntries);
+
+            if (addInwardEntryButton) {
+                addInwardEntryButton.addEventListener('click', async () => {
+                    const newEntry = {
+                        supplierName: supplierNameInput ? supplierNameInput.value : '',
+                        challanInvoiceNo: challanInvoiceNoInput ? challanInvoiceNoInput.value : '',
+                        date: inwardDateInput ? inwardDateInput.value : '',
+                        items: inwardItemsInput ? inwardItemsInput.value : '',
+                    };
+
+                    if (!newEntry.supplierName || !newEntry.challanInvoiceNo || !newEntry.date || !newEntry.items) {
+                        showMessage('inward-message', "Please fill all fields for Inward entry.", false);
+                        return;
+                    }
+
+                    appState.inwardEntries.push({ ...newEntry, id: crypto.randomUUID() }); // Add to appState
+                    saveDataToLocalStorage(); // Save changes
+                    showMessage('inward-message', 'Inward entry added successfully!', true);
+                    // Clear form
+                    if (supplierNameInput) supplierNameInput.value = '';
+                    if (challanInvoiceNoInput) challanInvoiceNoInput.value = '';
+                    if (inwardDateInput) inwardDateInput.valueAsDate = new Date(); // Reset to today
+                    if (inwardItemsInput) inwardItemsInput.value = '';
+                    renderInwardList(appState.inwardEntries); // Re-render list
+                });
+            }
+        }
+
+        async function renderOutward() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">Outward Goods Tracking</h2>
+                    <div id="outward-message" class="hidden"></div>
+
+                    <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="text-2xl font-semibold text-gray-700 mb-4">Add New Outward Entry</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="customer-name-out" class="block text-sm font-medium text-gray-700">Customer Name</label>
+                                <input type="text" id="customer-name-out" name="customerName" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., ABC Corp">
+                            </div>
+                            <div>
+                                <label for="outward-challan-invoice-no" class="block text-sm font-medium text-gray-700">Challan/Invoice No.</label>
+                                <input type="text" id="outward-challan-invoice-no" name="challanInvoiceNo" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., DC-2023-005">
+                            </div>
+                            <div>
+                                <label for="outward-date" class="block text-sm font-medium text-gray-700">Date</label>
+                                <input type="date" id="outward-date" name="date" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="outward-items" class="block text-sm font-medium text-gray-700">Items Dispatched (e.g., M8 Hex Bolt, 500pcs)</label>
+                                <textarea id="outward-items" name="items" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="List items, quantities, and units"></textarea>
+                            </div>
+                        </div>
+                        <button id="add-outward-entry-button" class="px-6 py-3 bg-red-600 text-white font-bold rounded-md shadow-lg hover:bg-red-700 transition-colors duration-200">
+                            Add Outward Entry
+                        </button>
+                    </div>
+
+                    <h3 class="text-2xl font-semibold text-gray-700 mb-4">Recent Outward Entries</h3>
+                    <div id="outward-list-container" class="overflow-x-auto">
+                        <p class="text-gray-500">Loading outward entries...</p>
+                    </div>
+                </div>
+            `;
+
+            const customerNameOutInput = document.getElementById('customer-name-out');
+            const challanInvoiceNoOutInput = document.getElementById('outward-challan-invoice-no');
+            const outwardDateInput = document.getElementById('outward-date');
+            const outwardItemsInput = document.getElementById('outward-items');
+            const addOutwardEntryButton = document.getElementById('add-outward-entry-button');
+            const outwardListContainer = document.getElementById('outward-list-container');
+
+            // Set today's date as default for outward date
+            if (outwardDateInput) outwardDateInput.valueAsDate = new Date();
+
+            const renderOutwardList = (entries) => {
+                if (!outwardListContainer) { // Safety check
+                    console.warn("outward-list-container not found. Skipping renderOutwardList.");
+                    return;
+                }
+                if (entries.length === 0) {
+                    outwardListContainer.innerHTML = '<p class="text-gray-500">No outward entries found.</p>';
+                    return;
+                }
+                let tableHtml = `
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-gray-100 border-b">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Customer Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Challan/Invoice No.</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Items</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                entries.forEach(entry => {
+                    tableHtml += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-800">${entry.customerName}</td>
+                            <td class="py-3 px-4 text-gray-800">${entry.challanInvoiceNo}</td>
+                            <td class="py-3 px-4 text-gray-800">${entry.date}</td>
+                            <td class="py-3 px-4 text-gray-600 text-sm">${entry.items}</td>
+                            <td class="py-3 px-4">
+                                <button data-id="${entry.id}" class="delete-outward-button px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `</tbody></table>`;
+                outwardListContainer.innerHTML = tableHtml;
+
+                document.querySelectorAll('.delete-outward-button').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const id = e.target.dataset.id;
+                        appState.outwardEntries = appState.outwardEntries.filter(entry => entry.id !== id); // Update appState
+                        saveDataToLocalStorage(); // Save changes
+                        renderOutwardList(appState.outwardEntries); // Re-render list
+                        showMessage('outward-message', 'Outward entry deleted successfully!', true);
+                    });
+                });
+            };
+
+            // Initial render of outward entries from appState
+            renderOutwardList(appState.outwardEntries);
+
+            if (addOutwardEntryButton) {
+                addOutwardEntryButton.addEventListener('click', async () => {
+                    const newEntry = {
+                        customerName: customerNameOutInput ? customerNameOutInput.value : '',
+                        challanInvoiceNo: challanInvoiceNoOutInput ? challanInvoiceNoOutInput.value : '',
+                        date: outwardDateInput ? outwardDateInput.value : '',
+                        items: outwardItemsInput ? outwardItemsInput.value : '',
+                    };
+
+                    if (!newEntry.customerName || !newEntry.challanInvoiceNo || !newEntry.date || !newEntry.items) {
+                        showMessage('outward-message', "Please fill all fields for Outward entry.", false);
+                        return;
+                    }
+
+                    appState.outwardEntries.push({ ...newEntry, id: crypto.randomUUID() }); // Add to appState
+                    saveDataToLocalStorage(); // Save changes
+                    showMessage('outward-message', 'Outward entry added successfully!', true);
+                    // Clear form
+                    if (customerNameOutInput) customerNameOutInput.value = '';
+                    if (challanInvoiceNoOutInput) challanInvoiceNoOutInput.value = '';
+                    if (outwardDateInput) outwardDateInput.valueAsDate = new Date(); // Reset to today
+                    if (outwardItemsInput) outwardItemsInput.value = '';
+                    renderOutwardList(appState.outwardEntries); // Re-render list
+                });
+            }
+        }
+
+        async function renderCustomers() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">Customer Management</h2>
+                    <div id="customer-message" class="hidden"></div>
+
+                    <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 id="customer-form-title" class="text-2xl font-semibold text-gray-700 mb-4">Add New Customer</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="customer-name" class="block text-sm font-medium text-gray-700">Company Name</label>
+                                <input type="text" id="customer-name" name="name" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., Customer Co. Ltd.">
+                            </div>
+                            <div>
+                                <label for="customer-gstin" class="block text-sm font-medium text-gray-700">GSTIN</label>
+                                <input type="text" id="customer-gstin" name="gstin" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., 27ABCDE1234F1Z5">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="customer-address" class="block text-sm font-medium text-gray-700">Address</label>
+                                <textarea id="customer-address" name="address" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Customer Company Address"></textarea>
+                            </div>
+                            <div>
+                                <label for="customer-phone" class="block text-sm font-medium text-gray-700">Phone</label>
+                                <input type="text" id="customer-phone" name="phone" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., +91 9988776655">
+                            </div>
+                            <div>
+                                <label for="customer-email" class="block text-sm font-medium text-gray-700">Email</label>
+                                <input type="email" id="customer-email" name="email" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., contact@customer.com">
+                            </div>
+                        </div>
+                        <button id="add-update-customer-button" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md shadow-lg hover:bg-blue-700 transition-colors duration-200">
+                            Add Customer
+                        </button>
+                        <button id="cancel-edit-customer-button" class="ml-4 px-6 py-3 bg-gray-300 text-gray-800 font-bold rounded-md shadow-lg hover:bg-gray-400 transition-colors duration-200 hidden">
+                            Cancel Edit
+                        </button>
+                    </div>
+
+                    <h3 class="text-2xl font-semibold text-gray-700 mb-4">Existing Customers</h3>
+                    <div id="customer-list-container" class="overflow-x-auto">
+                        <p class="text-gray-500">Loading customers...</p>
+                    </div>
+                </div>
+            `;
+
+            let editingCustomer = null;
+
+            const customerNameInput = document.getElementById('customer-name');
+            const customerGstinInput = document.getElementById('customer-gstin');
+            const customerAddressInput = document.getElementById('customer-address');
+            const customerPhoneInput = document.getElementById('customer-phone');
+            const customerEmailInput = document.getElementById('customer-email');
+            const addUpdateCustomerButton = document.getElementById('add-update-customer-button');
+            const cancelEditCustomerButton = document.getElementById('cancel-edit-customer-button');
+            const customerFormTitle = document.getElementById('customer-form-title');
+            const customerListContainer = document.getElementById('customer-list-container');
+
+            const clearForm = () => {
+                if (customerNameInput) customerNameInput.value = '';
+                if (customerGstinInput) customerGstinInput.value = '';
+                if (customerAddressInput) customerAddressInput.value = '';
+                if (customerPhoneInput) customerPhoneInput.value = '';
+                if (customerEmailInput) customerEmailInput.value = '';
+                editingCustomer = null;
+                if (addUpdateCustomerButton) addUpdateCustomerButton.textContent = 'Add Customer';
+                if (customerFormTitle) customerFormTitle.textContent = 'Add New Customer';
+                if (cancelEditCustomerButton) cancelEditCustomerButton.classList.add('hidden');
+            };
+
+            const renderCustomerList = (customers) => {
+                if (!customerListContainer) { // Safety check
+                    console.warn("customer-list-container not found. Skipping renderCustomerList.");
+                    return;
+                }
+                if (customers.length === 0) {
+                    customerListContainer.innerHTML = '<p class="text-gray-500">No customers added yet.</p>';
+                    return;
+                }
+                let tableHtml = `
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-gray-100 border-b">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Company Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">GSTIN</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Address</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Phone</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Email</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                customers.forEach(customer => {
+                    tableHtml += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-800">${customer.name}</td>
+                            <td class="py-3 px-4 text-gray-800">${customer.gstin || 'N/A'}</td>
+                            <td class="py-3 px-4 text-gray-600 text-sm">${customer.address}</td>
+                            <td class="py-3 px-4 text-gray-800">${customer.phone || 'N/A'}</td>
+                            <td class="py-3 px-4 text-gray-800">${customer.email || 'N/A'}</td>
+                            <td class="py-3 px-4">
+                                <button data-id="${customer.id}" class="edit-customer-button mr-2 px-3 py-1 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors duration-200">
+                                    Edit
+                                </button>
+                                <button data-id="${customer.id}" class="delete-customer-button px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `</tbody></table>`;
+                customerListContainer.innerHTML = tableHtml;
+
+                document.querySelectorAll('.edit-customer-button').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const id = e.target.dataset.id;
+                        const customerToEdit = appState.customers.find(c => c.id === id); // Use appState.customers
+                        if (customerToEdit) {
+                            editingCustomer = customerToEdit;
+                            if (customerNameInput) customerNameInput.value = customerToEdit.name;
+                            if (customerGstinInput) customerGstinInput.value = customerToEdit.gstin;
+                            if (customerAddressInput) customerAddressInput.value = customerToEdit.address;
+                            if (customerPhoneInput) customerPhoneInput.value = customerToEdit.phone;
+                            if (customerEmailInput) customerEmailInput.value = customerToEdit.email;
+                            if (addUpdateCustomerButton) addUpdateCustomerButton.textContent = 'Update Customer';
+                            if (customerFormTitle) customerFormTitle.textContent = 'Edit Customer';
+                            if (cancelEditCustomerButton) cancelEditCustomerButton.classList.remove('hidden');
+                        }
+                    });
+                });
+
+                document.querySelectorAll('.delete-customer-button').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const id = e.target.dataset.id;
+                        appState.customers = appState.customers.filter(c => c.id !== id); // Update appState.customers
+                        saveDataToLocalStorage(); // Save changes
+                        renderCustomerList(appState.customers); // Re-render list
+                        showMessage('customer-message', 'Customer deleted successfully!', true);
+                    });
+                });
+            };
+
+            // Initial render of customers from appState
+            renderCustomerList(appState.customers);
+
+            if (addUpdateCustomerButton) {
+                addUpdateCustomerButton.addEventListener('click', async () => {
+                    const newCustomer = {
+                        name: customerNameInput ? customerNameInput.value : '',
+                        gstin: customerGstinInput ? customerGstinInput.value : '',
+                        address: customerAddressInput ? customerAddressInput.value : '',
+                        phone: customerPhoneInput ? customerPhoneInput.value : '',
+                        email: customerEmailInput ? customerEmailInput.value : '',
+                    };
+
+                    if (!newCustomer.name || !newCustomer.address) {
+                        showMessage('customer-message', "Please fill in customer name and address.", false);
+                        return;
+                    }
+
+                    if (editingCustomer) {
+                        // Update existing customer
+                        appState.customers = appState.customers.map(c =>
+                            c.id === editingCustomer.id ? { ...newCustomer, id: c.id } : c
+                        );
+                        showMessage('customer-message', 'Customer updated successfully!', true);
+                    } else {
+                        // Add new customer
+                        appState.customers.push({ ...newCustomer, id: crypto.randomUUID() }); // Assign a unique ID
+                        showMessage('customer-message', 'Customer added successfully!', true);
+                    }
+                    saveDataToLocalStorage(); // Save changes
+                    clearForm();
+                    renderCustomerList(appState.customers); // Re-render list
+                });
+            }
+
+            if (cancelEditCustomerButton) cancelEditCustomerButton.addEventListener('click', clearForm);
+        }
+
+        async function renderSettings() {
+            const appContent = document.getElementById('app-content');
+            if (!appContent) return; // Safety check
+
+            appContent.innerHTML = `
+                <div class="p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">Settings</h2>
+                    <div id="settings-message" class="hidden"></div>
+
+                    <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="text-2xl font-semibold text-gray-700 mb-4">Company Details</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="company-name-setting" class="block text-sm font-medium text-gray-700">Company Name</label>
+                                <input type="text" id="company-name-setting" name="name" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Your Company Name">
+                            </div>
+                            <div>
+                                <label for="company-gstin-setting" class="block text-sm font-medium text-gray-700">GSTIN</label>
+                                <input type="text" id="company-gstin-setting" name="gstin" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Your Company GSTIN">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="company-address-setting" class="block text-sm font-medium text-gray-700">Address</label>
+                                <textarea id="company-address-setting" name="address" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Your Company Address"></textarea>
+                            </div>
+                            <div>
+                                <label for="company-phone-setting" class="block text-sm font-medium text-gray-700">Phone</label>
+                                <input type="text" id="company-phone-setting" name="phone" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Your Company Phone">
+                            </div>
+                            <div>
+                                <label for="company-email-setting" class="block text-sm font-medium text-gray-700">Email</label>
+                                <input type="email" id="company-email-setting" name="email" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., contact@yourcompany.com">
+                            </div>
+                        </div>
+                        <button id="save-company-details-button" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md shadow-lg hover:bg-blue-700 transition-colors duration-200">
+                            Save Company Details
+                        </button>
+                    </div>
+
+                    <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="text-2xl font-semibold text-gray-700 mb-4">Data Management</h3>
+                        <div class="flex flex-wrap gap-4">
+                            <button id="export-data-button" class="px-6 py-3 bg-green-600 text-white font-bold rounded-md shadow-lg hover:bg-green-700 transition-colors duration-200">
+                                Export All Data (JSON)
+                            </button>
+                            <input type="file" id="import-data-input" accept=".json" class="hidden">
+                            <button id="import-data-button" class="px-6 py-3 bg-purple-600 text-white font-bold rounded-md shadow-lg hover:bg-purple-700 transition-colors duration-200">
+                                Import Data (JSON)
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-2">Use these buttons to backup or restore your application data.</p>
+                    </div>
+                </div>
+            `;
+
+            const companyNameSetting = document.getElementById('company-name-setting');
+            const companyGstinSetting = document.getElementById('company-gstin-setting');
+            const companyAddressSetting = document.getElementById('company-address-setting');
+            const companyPhoneSetting = document.getElementById('company-phone-setting');
+            const companyEmailSetting = document.getElementById('company-email-setting');
+            const saveCompanyDetailsButton = document.getElementById('save-company-details-button');
+            const exportDataButton = document.getElementById('export-data-button');
+            const importDataButton = document.getElementById('import-data-button');
+            const importDataInput = document.getElementById('import-data-input');
+
+            // Populate form with current company details
+            if (companyNameSetting) companyNameSetting.value = appState.companyDetails.name;
+            if (companyGstinSetting) companyGstinSetting.value = appState.companyDetails.gstin;
+            if (companyAddressSetting) companyAddressSetting.value = appState.companyDetails.address;
+            if (companyPhoneSetting) companyPhoneSetting.value = appState.companyDetails.phone;
+            if (companyEmailSetting) companyEmailSetting.value = appState.companyDetails.email;
+
+            // Event listener for input changes
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                appState.companyDetails = { ...appState.companyDetails, [name]: value };
+            };
+            if (companyNameSetting) companyNameSetting.addEventListener('input', handleInputChange);
+            if (companyGstinSetting) companyGstinSetting.addEventListener('input', handleInputChange);
+            if (companyAddressSetting) companyAddressSetting.addEventListener('input', handleInputChange);
+            if (companyPhoneSetting) companyPhoneSetting.addEventListener('input', handleInputChange);
+            if (companyEmailSetting) companyEmailSetting.addEventListener('input', handleInputChange);
+
+            if (saveCompanyDetailsButton) {
+                saveCompanyDetailsButton.addEventListener('click', async () => {
+                    if (!appState.companyDetails.name || !appState.companyDetails.gstin || !appState.companyDetails.address) {
+                        showMessage('settings-message', "Company Name, GSTIN, and Address are required.", false);
+                        return;
+                    }
+
+                    // Company details are now part of the appState and saved with other data
+                    saveDataToLocalStorage();
+                    showMessage('settings-message', 'Company details saved successfully!', true);
+                    updateUI(); // Re-render to update header/footer with new company name
+                });
+            }
+
+            // Export Data functionality
+            if (exportDataButton) {
+                exportDataButton.addEventListener('click', () => {
+                    try {
+                        const data = JSON.stringify({
+                            companyDetails: appState.companyDetails,
+                            products: appState.products,
+                            customers: appState.customers,
+                            deliveryChallans: appState.deliveryChallans,
+                            invoices: appState.invoices,
+                            inwardEntries: appState.inwardEntries,
+                            outwardEntries: appState.outwardEntries
+                        }, null, 2); // Pretty print JSON
+
+                        const blob = new Blob([data], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `manufacturing_app_data_${new Date().toISOString().slice(0,10)}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        showMessage('settings-message', 'Data exported successfully!', true);
+                    } catch (error) {
+                        console.error("Error exporting data:", error);
+                        showMessage('settings-message', 'Error exporting data.', false);
+                    }
+                });
+            }
+
+            // Import Data functionality
+            if (importDataButton && importDataInput) {
+                importDataButton.addEventListener('click', () => {
+                    importDataInput.click(); // Trigger file input click
+                });
+
+                importDataInput.addEventListener('change', (event) => {
+                    const file = event.target.files[0];
+                    if (!file) {
+                        showMessage('settings-message', 'No file selected for import.', false);
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const importedData = JSON.parse(e.target.result);
+                            // Validate and merge imported data
+                            if (importedData.companyDetails) appState.companyDetails = importedData.companyDetails;
+                            if (importedData.products) appState.products = importedData.products;
+                            if (importedData.customers) appState.customers = importedData.customers;
+                            if (importedData.deliveryChallans) appState.deliveryChallans = importedData.deliveryChallans;
+                            if (importedData.invoices) appState.invoices = importedData.invoices;
+                            if (importedData.inwardEntries) appState.inwardEntries = importedData.inwardEntries;
+                            if (importedData.outwardEntries) appState.outwardEntries = importedData.outwardEntries;
+
+                            saveDataToLocalStorage(); // Persist imported data
+                            showMessage('settings-message', 'Data imported successfully! Reloading application...', true);
+                            // A full reload might be best to ensure all UI components reflect new data
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1000);
+                        } catch (error) {
+                            console.error("Error importing data:", error);
+                            showMessage('settings-message', 'Error parsing imported file. Please ensure it is a valid JSON.', false);
+                        }
+                    };
+                    reader.onerror = (e) => {
+                        console.error("Error reading file:", e);
+                        showMessage('settings-message', 'Error reading file during import.', false);
+                    };
+                    reader.readAsText(file);
+                });
+            }
+        }
+
+
+        // --- Initialization and Event Listeners ---
+
+        // Load data from local storage first
+        loadDataFromLocalStorage();
+
+        // Simulate authentication for local usage
+        // In a real app, you'd have a proper login system
+        // appState.isLoggedIn = true; // This will be handled by login page now
+        appState.isAuthReady = true; // Mark auth as ready
+
+        // Load jsPDF library
+        window.addEventListener('load', () => {
+            const script = document.createElement('script');
+            script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+            script.async = true;
+            script.onload = () => {
+                appState.isJsPdfLoaded = true;
+                console.log("jsPDF library loaded successfully.");
+            };
+            script.onerror = (e) => {
+                console.error("Failed to load jsPDF library.", e);
+                appState.isJsPdfLoaded = false;
+                showMessage('app-content', "Error loading PDF generation library. PDF features may not work.", false);
+            };
+            document.body.appendChild(script);
+        });
+
+        // Navigation button event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            const navHome = document.getElementById('nav-home');
+            const navInventory = document.getElementById('nav-inventory');
+            const navDeliveryChallan = document.getElementById('nav-delivery-challan');
+            const navInvoice = document.getElementById('nav-invoice');
+            const navInward = document.getElementById('nav-inward');
+            const navOutward = document.getElementById('nav-outward');
+            const navCustomers = document.getElementById('nav-customers');
+            const navSettings = document.getElementById('nav-settings');
+            const logoutButton = document.getElementById('logout-button');
+
+            if (navHome) navHome.addEventListener('click', () => {
+                appState.currentPage = 'home';
+                updateUI();
+            });
+            if (navInventory) navInventory.addEventListener('click', () => {
+                appState.currentPage = 'inventory';
+                updateUI();
+            });
+            if (navDeliveryChallan) navDeliveryChallan.addEventListener('click', () => {
+                appState.currentPage = 'delivery-challan';
+                updateUI();
+            });
+            if (navInvoice) navInvoice.addEventListener('click', () => {
+                appState.currentPage = 'invoice';
+                updateUI();
+            });
+            if (navInward) navInward.addEventListener('click', () => {
+                appState.currentPage = 'inward';
+                updateUI();
+            });
+            if (navOutward) navOutward.addEventListener('click', () => {
+                appState.currentPage = 'outward';
+                updateUI();
+            });
+            if (navCustomers) navCustomers.addEventListener('click', () => {
+                appState.currentPage = 'customers';
+                updateUI();
+            });
+            if (navSettings) navSettings.addEventListener('click', () => {
+                appState.currentPage = 'settings';
+                updateUI();
+            });
+            if (logoutButton) logoutButton.addEventListener('click', () => {
+                appState.isLoggedIn = false;
+                // appState.userId = null; // No need to clear for local_user_id
+                updateUI();
+                // In a real app, you'd call auth.signOut() here
+            });
+        });
+
+        // Initial render when DOM is ready
+        document.addEventListener('DOMContentLoaded', updateUI);
+    </script>
+</body>
+</html>
