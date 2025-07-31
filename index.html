@@ -846,6 +846,23 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- GST Percentage Inputs for Challan -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <div>
+                            <label for="dc-cgst-percent" class="block text-sm font-medium text-gray-700">CGST (%)</label>
+                            <input type="number" id="dc-cgst-percent" value="9" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 9">
+                        </div>
+                        <div>
+                            <label for="dc-sgst-percent" class="block text-sm font-medium text-gray-700">SGST (%)</label>
+                            <input type="number" id="dc-sgst-percent" value="9" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 9">
+                        </div>
+                        <div>
+                            <label for="dc-igst-percent" class="block text-sm font-medium text-gray-700">IGST (%)</label>
+                            <input type="number" id="dc-igst-percent" value="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 18">
+                        </div>
+                    </div>
+
                     <button id="create-challan-button" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md shadow-lg hover:bg-blue-700 transition-colors duration-200">
                         Create Challan
                     </button>
@@ -882,6 +899,12 @@
             const createChallanButton = document.getElementById('create-challan-button');
             const printChallanButton = document.getElementById('print-challan-button');
             const generateChallanPdfButton = document.getElementById('generate-challan-pdf-button');
+
+            // New GST inputs for DC
+            const dcCgstPercentInput = document.getElementById('dc-cgst-percent');
+            const dcSgstPercentInput = document.getElementById('dc-sgst-percent');
+            const dcIgstPercentInput = document.getElementById('dc-igst-percent');
+
 
             // Set today's date as default for challan date
             if (challanDateInput) challanDateInput.valueAsDate = new Date();
@@ -1040,6 +1063,9 @@
                         transport: transportInput ? transportInput.value : '',
                         vehicleNo: vehicleNoInput ? vehicleNoInput.value : '',
                         items: currentChallanItems,
+                        cgstPercent: dcCgstPercentInput ? parseFloat(dcCgstPercentInput.value) || 0 : 0,
+                        sgstPercent: dcSgstPercentInput ? parseFloat(dcSgstPercentInput.value) || 0 : 0,
+                        igstPercent: dcIgstPercentInput ? parseFloat(dcIgstPercentInput.value) || 0 : 0,
                         generatedAt: new Date().toISOString()
                     };
 
@@ -1065,6 +1091,9 @@
                     if (vehicleNoInput) vehicleNoInput.value = '';
                     currentChallanItems = [];
                     renderChallanItems();
+                    if (dcCgstPercentInput) dcCgstPercentInput.value = 9;
+                    if (dcSgstPercentInput) dcSgstPercentInput.value = 9;
+                    if (dcIgstPercentInput) dcIgstPercentInput.value = 0;
                 });
             }
 
@@ -1098,6 +1127,8 @@
                         const pageH = doc.internal.pageSize.getHeight();
                         const margin = 10;
                         const innerMargin = 2;
+                        const rowHeight = 7; // Height of each table row
+                        const minTableRows = 10; // Minimum number of rows in the product table
 
                         doc.setFontSize(8);
                         doc.setFont("helvetica", "normal");
@@ -1106,8 +1137,8 @@
 
                         let currentY = margin;
 
-                        const headerHeight = 30;
-                        doc.rect(margin, currentY, pageW - 2 * margin, headerHeight);
+                        const headerHeight = 30; // Keep this for the main header box
+                        doc.rect(margin, currentY, pageW - 2 * margin, headerHeight); // Main header box
 
                         doc.setFontSize(10);
                         doc.text(appState.companyDetails.name, margin + innerMargin, currentY + 5);
@@ -1120,24 +1151,56 @@
                         });
                         doc.text(`GSTIN/UIN: ${appState.companyDetails.gstin}`, margin + innerMargin, tempY);
 
-                        const rightColX = pageW - margin - 60;
                         doc.setFontSize(10);
                         doc.text(`DELIVERY CHALLAN`, pageW / 2, currentY + 5, { align: 'center' });
-                        doc.setFontSize(8);
-                        doc.text(`Challan No.`, rightColX, currentY + 5);
-                        doc.text(`${challanNoInput.value}`, rightColX + 25, currentY + 5);
-                        doc.text(`Dated`, rightColX, currentY + 10);
-                        doc.text(`${challanDateInput.value}`, rightColX + 25, currentY + 10);
-                        doc.text(`L.R. No.`, rightColX, currentY + 15);
-                        doc.text(`${lrNoInput.value}`, rightColX + 25, currentY + 15);
-                        doc.text(`E-Way No.`, rightColX, currentY + 20);
-                        doc.text(`${eWayNoInput.value}`, rightColX + 25, currentY + 20);
-                        doc.text(`Transport`, rightColX, currentY + 25);
-                        doc.text(`${transportInput.value}`, rightColX + 25, currentY + 25);
-                        doc.text(`Vehicle Number`, rightColX, currentY + 30);
-                        doc.text(`${vehicleNoInput.value}`, rightColX + 25, currentY + 30);
 
-                        currentY += headerHeight;
+                        // --- Original position for Challan Details (top right) ---
+                        const headerDetailsBoxX = pageW - margin - 60; // X position for the start of the box
+                        const headerDetailsBoxWidth = 60; // Width of each box
+                        const headerDetailsBoxHeight = 5; // Height of each box
+                        let headerDetailsCurrentY = currentY; // Start from the top of the main header box
+
+                        // Challan No.
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.setFontSize(8);
+                        doc.text(`Challan No.`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${challanNoInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // Dated
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`Dated`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${challanDateInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // L.R. No.
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`L.R. No.`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${lrNoInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // E-Way No.
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`E-Way No.`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${eWayNoInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // Transport
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`Transport`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${transportInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // Vehicle Number
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`Vehicle Number`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${vehicleNoInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+                        // --- End drawing boxular columns ---
+
+                        // Update currentY to be below the main header box, or below the last detail box if it extends further
+                        currentY = Math.max(currentY + headerHeight, headerDetailsCurrentY);
+
 
                         const customerBoxHeight = 30;
                         const halfPageWidth = (pageW - 2 * margin) / 2;
@@ -1177,32 +1240,58 @@
 
                         currentY += customerBoxHeight;
 
+                        // Increased width for "Disc %" column from 10 to 15
                         const tableHeaders = ["Sl No.", "Description of Goods", "HSN/SAC", "Quantity", "Rate", "per", "Disc %", "Amount"];
-                        const colWidths = [10, 50, 20, 20, 20, 10, 10, 30];
+                        const colWidths = [10, 50, 20, 20, 20, 10, 15, 25]; // Changed 7th column width to 15, and last to 25
                         let tableHeaderY = currentY;
                         let headerX = margin;
                         doc.setFontSize(8);
                         doc.setFillColor(230, 230, 230);
-                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F'); // Fill header background
                         doc.setTextColor(0, 0, 0);
 
                         tableHeaders.forEach((header, index) => {
                             doc.text(header, headerX + innerMargin, tableHeaderY + 5);
                             headerX += colWidths[index];
                         });
-                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7); // Draw border around header
+                        // Draw vertical lines for header
+                        let currentHeaderColX = margin;
+                        colWidths.forEach(width => {
+                            doc.line(currentHeaderColX + width, tableHeaderY, currentHeaderColX + width, tableHeaderY + 7);
+                            currentHeaderColX += width;
+                        });
                         currentY += 7;
 
                         let slNo = 1;
                         let totalQuantity = 0;
                         let totalAmountItems = 0;
-                        const rowHeight = 7;
 
-                        currentChallanItems.forEach(item => {
+                        // Draw data rows
+                        currentChallanItems.forEach((item, index) => {
                             if (currentY + rowHeight > pageH - 60) {
                                 doc.addPage();
                                 currentY = margin;
                                 doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+                                // Re-draw table headers on new page
+                                tableHeaderY = currentY;
+                                headerX = margin;
+                                doc.setFontSize(8);
+                                doc.setFillColor(230, 230, 230);
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                                doc.setTextColor(0, 0, 0);
+                                tableHeaders.forEach((header, index) => {
+                                    doc.text(header, headerX + innerMargin, tableHeaderY + 5);
+                                    headerX += colWidths[index];
+                                });
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                                // Draw vertical lines for header on new page
+                                let newHeaderColX = margin;
+                                colWidths.forEach(width => {
+                                    doc.line(newHeaderColX + width, tableHeaderY, newHeaderColX + width, tableHeaderY + 7);
+                                    newHeaderColX += width;
+                                });
+                                currentY += 7;
                             }
 
                             let rowX = margin;
@@ -1224,35 +1313,90 @@
                             doc.text(`${item.totalPrice.toFixed(2)}`, rowX + innerMargin, currentY + 5);
                             totalAmountItems += item.totalPrice;
 
-                            doc.rect(margin, currentY, pageW - 2 * margin, rowHeight);
+                            // Draw vertical lines for the current row
                             let currentColX = margin;
                             colWidths.forEach(width => {
                                 doc.line(currentColX + width, currentY, currentColX + width, currentY + rowHeight);
                                 currentColX += width;
                             });
 
+                            // Removed: Horizontal line after each data row
+                            // if (currentChallanItems.length > 1 && index < currentChallanItems.length - 1) {
+                            //     doc.line(margin, currentY + rowHeight, pageW - margin, currentY + rowHeight);
+                            // }
+
                             currentY += rowHeight;
                         });
 
-                        doc.line(margin, currentY, pageW - margin, currentY);
-                        currentY += 2;
+                        // Add empty rows to ensure minimum height
+                        const emptyRowsToAdd = Math.max(0, minTableRows - currentChallanItems.length);
+                        for (let i = 0; i < emptyRowsToAdd; i++) {
+                            if (currentY + rowHeight > pageH - 60) {
+                                doc.addPage();
+                                currentY = margin;
+                                doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+                                // Re-draw table headers on new page
+                                tableHeaderY = currentY;
+                                headerX = margin;
+                                doc.setFontSize(8);
+                                doc.setFillColor(230, 230, 230);
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                                doc.setTextColor(0, 0, 0);
+                                tableHeaders.forEach((header, index) => {
+                                    doc.text(header, headerX + innerMargin, tableHeaderY + 5);
+                                    headerX += colWidths[index];
+                                });
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                                // Draw vertical lines for header on new page
+                                let newHeaderColX = margin;
+                                colWidths.forEach(width => {
+                                    doc.line(newHeaderColX + width, tableHeaderY, newHeaderColX + width, tableHeaderY + 7);
+                                    newHeaderColX += width;
+                                });
+                                currentY += 7;
+                            }
+                            // Draw vertical lines for the empty row
+                            let currentColX = margin;
+                            colWidths.forEach(width => {
+                                doc.line(currentColX + width, currentY, currentColX + width, currentY + rowHeight);
+                                currentColX += width;
+                            });
+                            currentY += rowHeight;
+                        }
 
-                        // Retrieve GST percentages from input fields
-                        const cgstPercent = parseFloat(cgstPercentInput ? cgstPercentInput.value : '0') || 0;
-                        const sgstPercent = parseFloat(sgstPercentInput ? sgstPercentInput.value : '0') || 0;
-                        const igstPercent = parseFloat(igstPercentInput ? igstPercentInput.value : '0') || 0;
+                        // Draw the bottom border of the table
+                        doc.line(margin, currentY, pageW - margin, currentY);
+                        currentY += 2; // Small spacing after the table
+
+                        // Retrieve GST percentages from input fields (assuming they exist or default to 0)
+                        // For Delivery Challan, we primarily focus on CGST/SGST if intra-state.
+                        // We will explicitly show IGST as 0% if it's not applicable.
+                        const cgstPercent = dcCgstPercentInput ? parseFloat(dcCgstPercentInput.value) || 0 : 0;
+                        const sgstPercent = dcSgstPercentInput ? parseFloat(dcSgstPercentInput.value) || 0 : 0;
+                        const igstPercent = dcIgstPercentInput ? parseFloat(dcIgstPercentInput.value) || 0 : 0;
 
                         const cgstAmount = totalAmountItems * (cgstPercent / 100);
                         const sgstAmount = totalAmountItems * (sgstPercent / 100);
-                        const totalGST = cgstAmount + sgstAmount; // For challan, usually only CGST/SGST if intra-state
+                        const igstAmountChallan = totalAmountItems * (igstPercent / 100); // Calculate even if 0%
+                        const totalGST = cgstAmount + sgstAmount + igstAmountChallan; // Include IGST in total GST for consistency
 
                         doc.setFontSize(8);
                         doc.text(`CGST (${cgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${cgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
-                        currentY += 5;
+                        currentY += 6; // Increased spacing
                         doc.text(`SGST (${sgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${sgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
-                        currentY += 5;
+                        currentY += 6; // Increased spacing
+                        // Always display IGST, even if 0%
+                        doc.text(`IGST (${igstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${igstAmountChallan.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 6; // Increased spacing
+
+                        // Display Total GST Amount
+                        doc.text(`Total GST Amount`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${totalGST.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 10; // Increased spacing after total GST
+
 
                         doc.line(margin, currentY, pageW - margin, currentY);
                         currentY += 2;
@@ -1297,6 +1441,10 @@
                         doc.text(`Add: SGST`, margin + halfPageWidth + innerMargin, tempY);
                         doc.text(`${sgstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
                         tempY += 5;
+                        // Always display IGST in summary, even if 0%
+                        doc.text(`Add: IGST`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${igstAmountChallan.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
                         doc.text(`Total Tax Amount`, margin + halfPageWidth + innerMargin, tempY);
                         doc.text(`${totalGST.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
                         tempY += 5;
@@ -1310,9 +1458,12 @@
                         doc.setFontSize(8);
                         doc.text(`GST Payable on Reverse Charge: No`, margin + innerMargin, currentY + 5);
                         doc.text(`Certified that the particulars given are true and correct.`, margin + innerMargin, currentY + 10);
+
+                        // Move signature to the bottom of the page
+                        const signatureBlockY = pageH - margin - 20; // Position 20mm from bottom margin
                         doc.setFontSize(9);
-                        doc.text(`For ${appState.companyDetails.name}`, pageW - margin - 40, currentY + 15, { align: 'center' });
-                        doc.text(`Authorized Signatory`, pageW - margin - 40, currentY + 30, { align: 'center' });
+                        doc.text(`For ${appState.companyDetails.name}`, pageW - margin - 40, signatureBlockY, { align: 'center' });
+                        doc.text(`Authorized Signatory`, pageW - margin - 40, signatureBlockY + 15, { align: 'center' });
 
 
                         doc.save(`DeliveryChallan_${challanNoInput.value}.pdf`);
@@ -1666,6 +1817,7 @@
                         lrNo: lrNoInvInput ? lrNoInvInput.value : '',
                         eWayNo: eWayNoInvInput ? eWayNoInvInput.value : '',
                         transport: transportInvInput ? transportInvInput.value : '',
+                        gstin: customerGstinInv ? customerGstinInv.value : '', // Ensure GSTIN is passed
                         vehicleNo: vehicleNoInvInput ? vehicleNoInvInput.value : '',
                         items: currentInvoiceItems,
                         totalTaxableValue: taxableValueInput ? taxableValueInput.value : '0.00',
@@ -1738,6 +1890,8 @@
                         const pageH = doc.internal.pageSize.getHeight();
                         const margin = 10;
                         const innerMargin = 2;
+                        const rowHeight = 7; // Height of each table row
+                        const minTableRows = 10; // Minimum number of rows in the product table
 
                         doc.setFontSize(8);
                         doc.setFont("helvetica", "normal");
@@ -1746,8 +1900,8 @@
 
                         let currentY = margin;
 
-                        const headerHeight = 30;
-                        doc.rect(margin, currentY, pageW - 2 * margin, headerHeight);
+                        const headerHeight = 30; // Keep this for the main header box
+                        doc.rect(margin, currentY, pageW - 2 * margin, headerHeight); // Main header box
 
                         doc.setFontSize(10);
                         doc.text(appState.companyDetails.name, margin + innerMargin, currentY + 5);
@@ -1760,24 +1914,56 @@
                         });
                         doc.text(`GSTIN/UIN: ${appState.companyDetails.gstin}`, margin + innerMargin, tempY);
 
-                        const rightColX = pageW - margin - 60;
                         doc.setFontSize(10);
                         doc.text(`TAX INVOICE`, pageW / 2, currentY + 5, { align: 'center' });
-                        doc.setFontSize(8);
-                        doc.text(`Invoice No.`, rightColX, currentY + 5);
-                        doc.text(`${invoiceNoInput.value}`, rightColX + 25, currentY + 5);
-                        doc.text(`Dated`, rightColX, currentY + 10);
-                        doc.text(`${invoiceDateInput.value}`, rightColX + 25, currentY + 10);
-                        doc.text(`L.R. No.`, rightColX, currentY + 15);
-                        doc.text(`${lrNoInvInput.value}`, rightColX + 25, currentY + 15);
-                        doc.text(`E-Way No.`, rightColX, currentY + 20);
-                        doc.text(`${eWayNoInvInput.value}`, rightColX + 25, currentY + 20);
-                        doc.text(`Transport`, rightColX, currentY + 25);
-                        doc.text(`${transportInvInput.value}`, rightColX + 25, currentY + 25);
-                        doc.text(`Vehicle Number`, rightColX, currentY + 30);
-                        doc.text(`${vehicleNoInvInput.value}`, rightColX + 25, currentY + 30);
 
-                        currentY += headerHeight;
+                        // --- Original position for Invoice Details (top right) ---
+                        const headerDetailsBoxX = pageW - margin - 60; // X position for the start of the box
+                        const headerDetailsBoxWidth = 60; // Width of each box
+                        const headerDetailsBoxHeight = 5; // Height of each box
+                        let headerDetailsCurrentY = currentY; // Start from the top of the main header box
+
+                        // Invoice No.
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.setFontSize(8);
+                        doc.text(`Invoice No.`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${invoiceNoInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // Dated
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`Dated`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${invoiceDateInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // L.R. No.
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`L.R. No.`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${lrNoInvInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // E-Way No.
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`E-Way No.`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${eWayNoInvInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // Transport
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`Transport`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${transportInvInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+
+                        // Vehicle Number
+                        doc.rect(headerDetailsBoxX, headerDetailsCurrentY, headerDetailsBoxWidth, headerDetailsBoxHeight);
+                        doc.text(`Vehicle Number`, headerDetailsBoxX + innerMargin, headerDetailsCurrentY + 3.5);
+                        doc.text(`${vehicleNoInvInput.value}`, headerDetailsBoxX + 25 + innerMargin, headerDetailsCurrentY + 3.5);
+                        headerDetailsCurrentY += headerDetailsBoxHeight;
+                        // --- End drawing boxular columns ---
+
+                        // Update currentY to be below the main header box, or below the last detail box if it extends further
+                        currentY = Math.max(currentY + headerHeight, headerDetailsCurrentY);
+
 
                         const customerBoxHeight = 30;
                         const halfPageWidth = (pageW - 2 * margin) / 2;
@@ -1817,32 +2003,58 @@
 
                         currentY += customerBoxHeight;
 
+                        // Increased width for "Disc %" column from 10 to 15
                         const tableHeaders = ["Sl No.", "Description of Goods", "HSN/SAC", "Quantity", "Rate", "per", "Disc %", "Amount"];
-                        const colWidths = [10, 50, 20, 20, 20, 10, 10, 30];
+                        const colWidths = [10, 50, 20, 20, 20, 10, 15, 25]; // Changed 7th column width to 15, and last to 25
                         let tableHeaderY = currentY;
                         let headerX = margin;
                         doc.setFontSize(8);
                         doc.setFillColor(230, 230, 230);
-                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F'); // Fill header background
                         doc.setTextColor(0, 0, 0);
 
                         tableHeaders.forEach((header, index) => {
                             doc.text(header, headerX + innerMargin, tableHeaderY + 5);
                             headerX += colWidths[index];
                         });
-                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                        doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7); // Draw border around header
+                        // Draw vertical lines for header
+                        let currentHeaderColX = margin;
+                        colWidths.forEach(width => {
+                            doc.line(currentHeaderColX + width, tableHeaderY, currentHeaderColX + width, tableHeaderY + 7);
+                            currentHeaderColX += width;
+                        });
                         currentY += 7;
 
                         let slNo = 1;
                         let totalQuantity = 0;
                         let totalAmountItems = 0;
-                        const rowHeight = 7;
 
-                        currentInvoiceItems.forEach(item => {
+                        // Draw data rows
+                        currentInvoiceItems.forEach((item, index) => {
                             if (currentY + rowHeight > pageH - 60) {
                                 doc.addPage();
                                 currentY = margin;
                                 doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+                                // Re-draw table headers on new page
+                                tableHeaderY = currentY;
+                                headerX = margin;
+                                doc.setFontSize(8);
+                                doc.setFillColor(230, 230, 230);
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                                doc.setTextColor(0, 0, 0);
+                                tableHeaders.forEach((header, index) => {
+                                    doc.text(header, headerX + innerMargin, tableHeaderY + 5);
+                                    headerX += colWidths[index];
+                                });
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                                // Draw vertical lines for header on new page
+                                let newHeaderColX = margin;
+                                colWidths.forEach(width => {
+                                    doc.line(newHeaderColX + width, tableHeaderY, newHeaderColX + width, tableHeaderY + 7);
+                                    newHeaderColX += width;
+                                });
+                                currentY += 7;
                             }
 
                             let rowX = margin;
@@ -1864,18 +2076,60 @@
                             doc.text(`${item.totalPrice.toFixed(2)}`, rowX + innerMargin, currentY + 5);
                             totalAmountItems += item.totalPrice;
 
-                            doc.rect(margin, currentY, pageW - 2 * margin, rowHeight);
+                            // Draw vertical lines for the current row
                             let currentColX = margin;
                             colWidths.forEach(width => {
                                 doc.line(currentColX + width, currentY, currentColX + width, currentY + rowHeight);
                                 currentColX += width;
                             });
 
+                            // Removed: Horizontal line after each data row
+                            // if (currentInvoiceItems.length > 1 && index < currentInvoiceItems.length - 1) {
+                            //     doc.line(margin, currentY + rowHeight, pageW - margin, currentY + rowHeight);
+                            // }
+
                             currentY += rowHeight;
                         });
 
+                        // Add empty rows to ensure minimum height
+                        const emptyRowsToAdd = Math.max(0, minTableRows - currentInvoiceItems.length);
+                        for (let i = 0; i < emptyRowsToAdd; i++) {
+                            if (currentY + rowHeight > pageH - 60) {
+                                doc.addPage();
+                                currentY = margin;
+                                doc.rect(margin, margin, pageW - 2 * margin, pageH - 2 * margin);
+                                // Re-draw table headers on new page
+                                tableHeaderY = currentY;
+                                headerX = margin;
+                                doc.setFontSize(8);
+                                doc.setFillColor(230, 230, 230);
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7, 'F');
+                                doc.setTextColor(0, 0, 0);
+                                tableHeaders.forEach((header, index) => {
+                                    doc.text(header, headerX + innerMargin, tableHeaderY + 5);
+                                    headerX += colWidths[index];
+                                });
+                                doc.rect(margin, tableHeaderY, pageW - 2 * margin, 7);
+                                // Draw vertical lines for header on new page
+                                let newHeaderColX = margin;
+                                colWidths.forEach(width => {
+                                    doc.line(newHeaderColX + width, tableHeaderY, newHeaderColX + width, tableHeaderY + 7);
+                                    newHeaderColX += width;
+                                });
+                                currentY += 7;
+                            }
+                            // Draw vertical lines for the empty row
+                            let currentColX = margin;
+                            colWidths.forEach(width => {
+                                doc.line(currentColX + width, currentY, currentColX + width, currentY + rowHeight);
+                                currentColX += width;
+                            });
+                            currentY += rowHeight;
+                        }
+
+                        // Draw the bottom border of the table
                         doc.line(margin, currentY, pageW - margin, currentY);
-                        currentY += 2;
+                        currentY += 2; // Small spacing after the table
 
                         const cgstPercent = parseFloat(cgstPercentInput.value) || 0;
                         const sgstPercent = parseFloat(sgstPercentInput.value) || 0;
@@ -1889,15 +2143,20 @@
                         doc.setFontSize(8);
                         doc.text(`CGST (${cgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${cgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
-                        currentY += 5;
+                        currentY += 6; // Increased spacing
                         doc.text(`SGST (${sgstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
                         doc.text(`${sgstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
-                        currentY += 5;
-                        if (igstAmount > 0) {
-                            doc.text(`IGST (${igstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
-                            doc.text(`${igstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
-                            currentY += 5;
-                        }
+                        currentY += 6; // Increased spacing
+                        // Always display IGST, even if 0%
+                        doc.text(`IGST (${igstPercent}%)`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${igstAmount.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 6; // Increased spacing
+
+                        // Display Total GST Amount
+                        doc.text(`Total GST Amount`, margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + innerMargin, currentY + 3);
+                        doc.text(`${totalGST.toFixed(2)}`, pageW - margin - innerMargin, currentY + 3, { align: 'right' });
+                        currentY += 10; // Increased spacing after total GST
+
 
                         doc.line(margin, currentY, pageW - margin, currentY);
                         currentY += 2;
@@ -1942,11 +2201,10 @@
                         doc.text(`Add: SGST`, margin + halfPageWidth + innerMargin, tempY);
                         doc.text(`${sgstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
                         tempY += 5;
-                        if (igstAmount > 0) {
-                            doc.text(`Add: IGST`, margin + halfPageWidth + innerMargin, tempY);
-                            doc.text(`${igstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
-                            tempY += 5;
-                        }
+                        // Always display IGST in summary, even if 0%
+                        doc.text(`Add: IGST`, margin + halfPageWidth + innerMargin, tempY);
+                        doc.text(`${igstAmount.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
+                        tempY += 5;
                         doc.text(`Total Tax Amount`, margin + halfPageWidth + innerMargin, tempY);
                         doc.text(`${totalGST.toFixed(2)}`, margin + halfPageWidth + halfPageWidth - innerMargin, tempY, { align: 'right' });
                         tempY += 5;
@@ -1960,9 +2218,12 @@
                         doc.setFontSize(8);
                         doc.text(`GST Payable on Reverse Charge: No`, margin + innerMargin, currentY + 5);
                         doc.text(`Certified that the particulars given are true and correct.`, margin + innerMargin, currentY + 10);
+
+                        // Move signature to the bottom of the page
+                        const signatureBlockY = pageH - margin - 20; // Position 20mm from bottom margin
                         doc.setFontSize(9);
-                        doc.text(`For ${appState.companyDetails.name}`, pageW - margin - 40, currentY + 15, { align: 'center' });
-                        doc.text(`Authorized Signatory`, pageW - margin - 40, currentY + 30, { align: 'center' });
+                        doc.text(`For ${appState.companyDetails.name}`, pageW - margin - 40, signatureBlockY, { align: 'center' });
+                        doc.text(`Authorized Signatory`, pageW - margin - 40, signatureBlockY + 15, { align: 'center' });
 
 
                         doc.save(`Invoice_${invoiceNoInput.value}.pdf`);
